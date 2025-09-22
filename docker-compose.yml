@@ -1,0 +1,39 @@
+
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Monta el código fuente para el desarrollo con --reload
+      - ./src:/app/src
+      # Monta un volumen persistente para la base de datos
+      - backend_data:/app/data
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    # El servicio de Streamlit debe comunicarse con el backend usando el nombre del servicio de Docker.
+    # Esta variable de entorno es leída por la app de Streamlit.
+    environment:
+      - BACKEND_URL=http://backend:8000/api/v1
+      - PYTHONPATH=/app
+    volumes:
+      # Monta el código fuente para ver los cambios en la UI al momento
+      - ./src:/app/src
+    command: streamlit run src/adapters/streamlit/app.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:
+    # Define el volumen para la persistencia de la base de datos
