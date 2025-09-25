@@ -15,26 +15,32 @@
 - **[`doc/ROADMAP.md`](./doc/ROADMAP.md)** - Próximos pasos y fases pendientes
 - **[`doc/ARCHITECTURE_IMPROVEMENTS.md`](./doc/ARCHITECTURE_IMPROVEMENTS.md)** - Arquitectura completada ✅
 - **[`doc/PROJECT_OVERVIEW.md`](./doc/PROJECT_OVERVIEW.md)** - Introducción para nuevos desarrolladores
+- **[`doc/ENVIRONMENT_SETUP.md`](./doc/ENVIRONMENT_SETUP.md)** - Configuración del entorno ✅ **NUEVO**
 
 ---
 
 ## 🎯 **Inicio Rápido (Versión Resumida)**
 
-### **Instalación**
+### **1. Configurar Entorno Virtual**
 ```bash
-# Instalar dependencias
-uv sync
+# Método fácil (recomendado)
+source activate.sh
 
-# Lanzar con Docker
+# O manualmente
+source .venv/bin/activate
+```
+
+### **2. Lanzar con Docker**
+```bash
 docker-compose up --build
 ```
 
-### **Acceso**
+### **3. Acceso**
 - **Frontend (Streamlit)**: http://localhost:8501
 - **Backend API**: http://localhost:8000
 - **Documentación API**: http://localhost:8000/docs
 
-### **Configuración**
+### **4. Configuración**
 Crear archivo `.env` con las API keys:
 ```env
 GROQ_API_KEY=your_key_here
@@ -63,10 +69,11 @@ GEMINI_API_KEY=your_key_here
 - 💬 **Chat persistente** con historial completo
 - 🏗️ **Arquitectura hexagonal completa** ✅ **NUEVO**
 - 🐳 **Despliegue Docker** completo
+- 🔧 **Entorno virtual con uv** ✅ **NUEVO**
 
 ---
 
-## 🎯 **Hito Importante Alcanzado**
+## �� **Hito Importante Alcanzado**
 
 ### **✅ Domain Layer Completado**
 **Fecha:** Septiembre 2025
@@ -96,7 +103,7 @@ GEMINI_API_KEY=your_key_here
 
 ### **Próximos Pasos**
 - 📋 **Fase 6**: Testing del domain layer (pendiente)
-- �� **Fase 7**: RAG avanzado (planificado)
+- 📋 **Fase 7**: RAG avanzado (planificado)
 
 ---
 
@@ -110,8 +117,8 @@ GEMINI_API_KEY=your_key_here
 
 ### **Comandos de Desarrollo**
 ```bash
-# Dependencias
-uv sync --dev
+# Entorno virtual
+source activate.sh  # Activación fácil
 
 # Ver progreso
 git log --oneline
@@ -132,6 +139,7 @@ docker-compose up --build
 - Consulta la **[documentación completa](./doc/README.md)**
 - Revisa el **[estado actual](./doc/IMPLEMENTATION.md)**
 - Consulta el **[roadmap](./doc/ROADMAP.md)**
+- Configura el **[entorno](./doc/ENVIRONMENT_SETUP.md)** ✅ **NUEVO**
 
 ### **Contribuciones:**
 1. Lee la **[guía de arquitectura](./doc/ARCHITECTURE_IMPROVEMENTS.md)**
