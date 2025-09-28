@@ -1,7 +1,7 @@
 """
 Endpoints para extracción de texto de archivos (PDF y texto plano).
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Query
 from src.adapters.config.settings import settings
 from src.adapters.db.database import get_session
 from sqlmodel import Session, select
@@ -12,6 +12,8 @@ from datetime import datetime
 from src.adapters.db.file_models import FileUpload, FileSection, FileStatus
 from src.adapters.db.database import engine
 from sqlmodel import Session as SQLSession
+from src.application.services.embeddings_service import EmbeddingsService
+from src.adapters.db.embeddings_repository import EmbeddingsRepository
 
 router = APIRouter()
 
@@ -101,10 +103,36 @@ async def extract_text(file: UploadFile = File(...)):
     }
 
 
+@router.get("/files")
+def list_files(limit: int = Query(20, ge=1, le=200), session: Session = Depends(get_session)):
+    """Lista los últimos archivos subidos, más recientes primero."""
+    stmt = select(FileUpload).order_by(FileUpload.created_at.desc()).limit(limit)
+    items = session.exec(stmt).all()
+    out = []
+    for f in items:
+        out.append(
+            {
+                "id": f.id,
+                "filename": f.filename_original,
+                "status": f.status,
+                "pages_processed": f.pages_processed,
+                "total_pages": f.total_pages,
+                "size_bytes": f.size_bytes,
+                "created_at": f.created_at.isoformat() if f.created_at else None,
+            }
+        )
+    return out
+
+
 # ============ Pipeline para PDFs grandes (upload + process + status + sections) ============
 
 @router.post("/files/upload")
-async def upload_file(file: UploadFile = File(...), session: Session = Depends(get_session)):
+async def upload_file(
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    background: BackgroundTasks = None,
+    auto_index: bool = Query(False, description="Si es true, procesa e indexa automáticamente en background"),
+):
     filename_original = sanitize_filename(file.filename or "uploaded.pdf")
     content_type = file.content_type or "application/octet-stream"
     is_pdf = filename_original.lower().endswith(".pdf") or (content_type == "application/pdf")
@@ -142,6 +170,9 @@ async def upload_file(file: UploadFile = File(...), session: Session = Depends(g
     session.add(fu)
     session.commit()
     session.refresh(fu)
+    # Disparar pipeline completo si se solicita
+    if auto_index and background is not None:
+        background.add_task(_process_and_index, fu.id)
     return {"file_id": fu.id, "filename": filename_original, "size_bytes": size_bytes}
 
 
@@ -213,6 +244,36 @@ def _process_pdf_into_sections(file_id: int):
             session.commit()
 
 
+def _process_and_index(file_id: int):
+    """Orquestador: procesa el PDF en secciones y luego indexa embeddings en pgvector.
+    Idempotente: si ya existen embeddings para el file_id, no reindexa.
+    """
+    # Primero, crear secciones (actualiza FileUpload.status y páginas procesadas)
+    _process_pdf_into_sections(file_id)
+
+    # Luego, indexar si el archivo quedó READY
+    with SQLSession(engine) as session:
+        fu = session.get(FileUpload, file_id)
+        if not fu or fu.status != FileStatus.READY:
+            return
+    try:
+        repo = EmbeddingsRepository()
+        repo.ensure_schema()
+        # Evitar reindexación si ya existe
+        if repo.count_chunks(file_id) > 0:
+            return
+        svc = EmbeddingsService(repo)
+        svc.index_file(file_id)
+    except Exception as e:
+        # Registrar el error en FileUpload.error_message para visibilidad
+        with SQLSession(engine) as session:
+            fu2 = session.get(FileUpload, file_id)
+            if fu2:
+                fu2.error_message = f"index_error: {e}"
+                fu2.updated_at = datetime.utcnow()
+                session.add(fu2)
+                session.commit()
+
 @router.post("/files/process/{file_id}")
 def start_processing(file_id: int, background: BackgroundTasks, session: Session = Depends(get_session)):
     fu = session.get(FileUpload, file_id)
@@ -242,6 +303,37 @@ def file_status(file_id: int, session: Session = Depends(get_session)):
         "pages_processed": fu.pages_processed,
         "total_pages": fu.total_pages,
         "error_message": fu.error_message,
+    }
+
+
+@router.get("/files/progress/{file_id}")
+def file_progress(file_id: int, session: Session = Depends(get_session)):
+    """Devuelve un estado unificado del pipeline (secciones + índice)."""
+    fu = session.get(FileUpload, file_id)
+    if not fu:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    phase = "uploaded"
+    detail = None
+    try:
+        repo = EmbeddingsRepository()
+        chunks = repo.count_chunks(file_id)
+    except Exception:
+        chunks = 0
+    if fu.status in (FileStatus.PENDING, FileStatus.PROCESSING):
+        phase = "processing_sections"
+    elif fu.status == FileStatus.READY:
+        # Si no hay embeddings aún, asumimos que está indexando o pendiente de indexar
+        phase = "ready" if chunks > 0 else "indexing_embeddings"
+        detail = {"chunks_indexed": chunks}
+    elif fu.status == FileStatus.ERROR:
+        phase = "error"
+        detail = {"error": fu.error_message}
+    return {
+        "phase": phase,
+        "status": fu.status,
+        "pages_processed": fu.pages_processed,
+        "total_pages": fu.total_pages,
+        "detail": detail,
     }
 
 

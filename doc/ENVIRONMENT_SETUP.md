@@ -122,6 +122,62 @@ docker-compose up --build
 # - Documentación: http://localhost:8000/docs
 ```
 
+
+## 🔐 Variables de Entorno (.env)
+
+Asegúrate de crear un archivo `.env` en la raíz del proyecto con tus credenciales y configuración. Ejemplo:
+
+```env
+# API Keys para IA
+GROQ_API_KEY=tu_api_key_groq
+GEMINI_API_KEY=tu_api_key_gemini
+
+# Backend URL para Streamlit (en Docker, el frontend habla a "backend")
+BACKEND_URL=http://backend:8000/api/v1
+
+# Control de contexto
+FILE_CONTEXT_MAX_CHARS=6000
+MESSAGES_MAX_CHARS=10000
+
+# Base de datos SQLite (historial de chat y metadatos de PDFs)
+# DATABASE_URL por defecto: sqlite:///./data/chat_history.db (no es necesario declararla)
+
+# PostgreSQL + pgvector (opcional para embeddings)
+POSTGRES_DB=pg_data
+POSTGRES_USER=agentehibrido
+POSTGRES_PASSWORD=tu_password
+DATABASE_URL_PG=postgresql+psycopg2://agentehibrido:tu_password@postgres:5432/pg_data
+```
+
+Notas:
+- Dentro de Docker, el host para Postgres es `postgres` (nombre del servicio en docker-compose).
+- Si usas caracteres especiales en la contraseña, URL-encódelos (por ejemplo `@` -> `%40`).
+- El archivo `.env` está en `.gitignore` y no se sube al repositorio.
+
+
+## 🧪 Verificación de PostgreSQL + pgvector
+
+Después de levantar Docker, valida la conexión y la extensión `vector` con el endpoint de salud del backend:
+
+```bash
+curl http://localhost:8000/api/v1/pg/health
+# Debe responder algo como:
+{"configured":true,"connected":true,"pgvector_installed":true}
+```
+
+Si `configured` es `false`, revisa que `DATABASE_URL_PG` esté presente en `.env` y reinicia el backend.
+
+
+## 📝 Exportación de Chat (PDF/Markdown)
+
+La UI de Streamlit permite descargar el chat como Markdown (sin dependencias extra) y como PDF (requiere `reportlab`).
+Si el botón de PDF aparece deshabilitado tras levantar, reconstruye las imágenes para asegurar la instalación de dependencias:
+
+```bash
+docker-compose build
+docker-compose up
+```
+
 ---
 
 ## 📝 Notas Importantes

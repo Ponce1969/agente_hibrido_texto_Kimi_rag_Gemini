@@ -208,3 +208,26 @@ docker-compose up --build
 **Última actualización:** Septiembre 2025
 **Versión del proyecto:** 0.2.0
 **Estado:** **Arquitectura profesional completada** 🏗️
+
+---
+
+## 🧭 Trabajo Pendiente: RAG Híbrido (PG + pgvector)
+
+Para habilitar recuperación semántica sobre PDFs grandes mediante una base híbrida (historial en SQLite + embeddings en PostgreSQL con pgvector), seguiremos este plan incremental:
+
+### Plan en 4 pasos
+- [ ] Paso 1: Crear modelos/tablas en PG y repositorio.
+- [ ] Paso 2: Servicio de embeddings y endpoint de indexación.
+- [ ] Paso 3: Búsqueda top-k y endpoint de prueba.
+- [ ] Paso 4: Integración en ChatService para respuestas más contextuales.
+
+### Estado actual (Septiembre 2025)
+- [x] Servicio PostgreSQL con pgvector definido en `docker-compose.yml` (volumen `pg_data`).
+- [x] Verificación de salud: `GET /api/v1/pg/health` (conexión y extensión `vector`).
+- [x] Dependencias agregadas: `pgvector`, `sentence-transformers`, `numpy`, `reportlab` (exportar a PDF desde Streamlit).
+- [x] Configuración opcional `DATABASE_URL_PG` en `src/adapters/config/settings.py`.
+- [x] Exportación de chat desde `src/adapters/streamlit/app.py` en Markdown y PDF.
+- [ ] Modelos/tablas de embeddings en PG.
+- [ ] Servicio de embeddings (chunking + generación + persistencia en PG).
+- [ ] Repositorio de búsqueda vectorial (top-k) y endpoint de prueba.
+- [ ] Integración en `ChatService` para incluir contexto relevante por similitud.

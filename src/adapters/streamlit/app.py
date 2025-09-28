@@ -4,8 +4,10 @@ Frontend de la aplicación de chat con Streamlit.
 import streamlit as st
 import httpx
 import io
-
 import os
+import time
+from datetime import datetime
+from typing import List, Dict
 
 from src.adapters.agents.prompts import AgentMode
 
@@ -28,6 +30,25 @@ def create_new_session() -> int:
     except httpx.RequestError as e:
         st.error(f"Error de conexión al crear sesión: {e}")
         return 0
+
+
+def api_get_session_messages(session_id: int) -> list[dict]:
+    try:
+        r = httpx.get(f"{BACKEND_URL}/sessions/{session_id}/messages", timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        # Normalizar a estructura de la UI
+        return [{"role": m.get("role", "assistant"), "content": m.get("content", "")} for m in data]
+    except Exception:
+        return []
+
+def api_list_files(limit: int = 20) -> list[dict]:
+    try:
+        r = httpx.get(f"{BACKEND_URL}/files", params={"limit": limit}, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return []
 
 def post_chat_message(session_id: int, message: str, mode: AgentMode, file_id: int | None = None) -> str:
     """Envía un mensaje al backend y devuelve la respuesta de la IA."""
@@ -68,11 +89,12 @@ def post_chat_message(session_id: int, message: str, mode: AgentMode, file_id: i
     return ""
 
 
-def api_upload_pdf(file_name: str, file_bytes: bytes, mime: str) -> dict:
+def api_upload_pdf(file_name: str, file_bytes: bytes, mime: str, auto_index: bool = False) -> dict:
     files = {
         "file": (file_name, file_bytes, mime or "application/pdf"),
     }
-    r = httpx.post(f"{BACKEND_URL}/files/upload", files=files, timeout=120)
+    params = {"auto_index": str(auto_index).lower()} if auto_index else None
+    r = httpx.post(f"{BACKEND_URL}/files/upload", files=files, params=params, timeout=120)
     r.raise_for_status()
     return r.json()
 
@@ -89,6 +111,12 @@ def api_get_status(file_id: int) -> dict:
     return r.json()
 
 
+def api_get_progress(file_id: int) -> dict:
+    r = httpx.get(f"{BACKEND_URL}/files/progress/{file_id}", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
 def api_list_sections(file_id: int) -> list[dict]:
     r = httpx.get(f"{BACKEND_URL}/files/{file_id}/sections", timeout=30)
     r.raise_for_status()
@@ -101,6 +129,23 @@ def api_get_section_text(file_id: int, section_id: int) -> str:
     data = r.json()
     return data.get("text", "")
 
+
+# --- Embeddings (pgvector) helpers ---
+
+def api_embeddings_index(file_id: int) -> dict:
+    r = httpx.post(f"{BACKEND_URL}/embeddings/index/{file_id}", timeout=600)
+    r.raise_for_status()
+    return r.json()
+
+
+def api_embeddings_search(q: str, file_id: int | None, top_k: int = 5) -> dict:
+    params = {"q": q, "top_k": top_k}
+    if file_id is not None:
+        params["file_id"] = file_id
+    r = httpx.get(f"{BACKEND_URL}/embeddings/search", params=params, timeout=60)
+    r.raise_for_status()
+    return r.json()
+
 # --- Inicialización del Estado de la Sesión ---
 
 if "session_id" not in st.session_state:
@@ -108,6 +153,9 @@ if "session_id" not in st.session_state:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    # Intentar cargar del backend si hay session_id válido
+    if st.session_state.session_id:
+        st.session_state.messages = api_get_session_messages(st.session_state.session_id)
 
 # --- Barra Lateral (Sidebar) ---
 
@@ -128,6 +176,50 @@ with st.sidebar:
         type=["txt", "md", "py", "pdf"] # Se pueden añadir más tipos
     )
 
+    # Selector de PDF existente
+    with st.expander("Seleccionar PDF existente", expanded=False):
+        files = api_list_files(limit=30)
+        if files:
+            # Mostrar como selectbox: "file_id - filename (status)"
+            options = {f"{it.get('id')} - {it.get('filename')} ({it.get('status')})": it.get('id') for it in files}
+            sel = st.selectbox("Elige un PDF ya cargado", options=list(options.keys()), index=None, placeholder="— seleccionar —")
+            if sel:
+                st.session_state.pdf_file_id = options[sel]
+                st.success(f"PDF seleccionado: file_id={st.session_state.pdf_file_id}")
+        else:
+            st.info("No hay PDFs cargados aún o no se pudo consultar el backend.")
+
+    # Sesiones anteriores
+    st.header("Sesiones anteriores")
+    sessions = api_list_sessions(USER_ID, limit=30)
+    if sessions:
+        labels = [f"{s.get('id')} - {s.get('session_name') or 'sin título'} ({s.get('updated_at') or 's/fecha'})" for s in sessions]
+        mapping = {labels[i]: sessions[i]["id"] for i in range(len(sessions))}
+        sel_s = st.selectbox("Reabrir sesión", options=labels, index=None, placeholder="— seleccionar —")
+        if sel_s:
+            st.session_state.session_id = mapping[sel_s]
+            st.session_state.messages = api_get_session_messages(st.session_state.session_id)
+            st.success(f"Sesión cargada: {st.session_state.session_id}")
+
+        with st.expander("Borrar sesión", expanded=False):
+            del_s = st.selectbox("Elige sesión a borrar", options=labels, index=None, placeholder="— seleccionar —", key="_del_s")
+            confirm = st.checkbox("Estoy seguro de borrar esta sesión", key="_del_confirm")
+            if st.button("Borrar sesión seleccionada", use_container_width=True, disabled=not (del_s and confirm)):
+                sid = mapping.get(del_s)
+                if sid:
+                    ok = api_delete_session(sid)
+                    if ok:
+                        st.success("Sesión borrada.")
+                        # Si borraste la sesión actual, limpia el estado local
+                        if st.session_state.get("session_id") == sid:
+                            st.session_state.messages = []
+                        # Fuerza un refresco para actualizar la lista al instante
+                        st.rerun()
+                    else:
+                        st.error("No se pudo borrar la sesión.")
+    else:
+        st.caption("No hay sesiones previas para este usuario.")
+
     # Estado para pipeline avanzado
     if "pdf_file_id" not in st.session_state:
         st.session_state.pdf_file_id = None
@@ -139,65 +231,157 @@ with st.sidebar:
         st.session_state.pdf_status = None
 
     if advanced_pdf_mode and uploaded_file is not None and (uploaded_file.name.lower().endswith(".pdf")):
-        # Flujo: upload -> process -> status -> sections
-        with st.expander("Procesamiento de PDF", expanded=True):
-            col1, col2 = st.columns([1,1])
-            with col1:
-                if st.button("1) Subir PDF", use_container_width=True):
-                    try:
-                        meta = api_upload_pdf(uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type or "application/pdf")
-                        st.session_state.pdf_file_id = meta["file_id"]
-                        st.success(f"Subido OK. file_id={meta['file_id']}")
-                    except Exception as e:
-                        st.error(f"Error al subir PDF: {e}")
-            with col2:
-                if st.button("2) Procesar en servidor", use_container_width=True, disabled=st.session_state.pdf_file_id is None):
-                    try:
-                        api_start_process(st.session_state.pdf_file_id)
-                        st.info("Procesamiento iniciado.")
-                    except Exception as e:
-                        st.error(f"No se pudo iniciar el procesamiento: {e}")
+        # Flujo simplificado: un botón que sube + procesa + indexa en background y muestra progreso unificado
+        with st.expander("Usar PDF como contexto (One‑click)", expanded=True):
+            if st.button("Subir y preparar contexto automáticamente", use_container_width=True):
+                try:
+                    meta = api_upload_pdf(
+                        uploaded_file.name,
+                        uploaded_file.getvalue(),
+                        uploaded_file.type or "application/pdf",
+                        auto_index=True,
+                    )
+                    st.session_state.pdf_file_id = meta["file_id"]
+                    st.success(f"Subido. file_id={meta['file_id']}")
+                except Exception as e:
+                    st.error(f"Error al subir PDF: {e}")
 
-            # Polling de estado
+            # Progreso unificado
             if st.session_state.pdf_file_id is not None:
-                with st.status("Procesando…", expanded=True) as status_box:
+                with st.status("Preparando contexto…", expanded=True) as status_box:
                     try:
-                        # Poll corto (hasta ~10 iteraciones)
                         ready = False
-                        for _ in range(10):
-                            s = api_get_status(st.session_state.pdf_file_id)
-                            st.write(f"Páginas {s.get('pages_processed', 0)}/{s.get('total_pages', 0)} - estado: {s.get('status')}")
-                            if s.get("status") == "ready":
+                        for i in range(20):
+                            p = api_get_progress(st.session_state.pdf_file_id)
+                            phase = p.get("phase")
+                            detail = p.get("detail") or {}
+                            if phase == "processing_sections":
+                                st.write(f"Procesando páginas: {p.get('pages_processed', 0)}/{p.get('total_pages', 0)}")
+                            elif phase == "indexing_embeddings":
+                                st.write(f"Indexando embeddings… chunks={detail.get('chunks_indexed', 0)} (aprox.)")
+                            elif phase == "ready":
                                 ready = True
                                 break
-                            if s.get("status") == "error":
-                                st.error(f"Error de procesamiento: {s.get('error_message')}")
+                            elif phase == "error":
+                                st.error(f"Error: {detail.get('error')}")
                                 break
-                            st.sleep(1.0)
+                            time.sleep(1)
                         if ready:
-                            status_box.update(label="¡Listo! Secciones disponibles", state="complete")
-                            try:
-                                st.session_state.pdf_sections = api_list_sections(st.session_state.pdf_file_id)
-                            except Exception as e:
-                                st.error(f"No se pudieron listar secciones: {e}")
+                            status_box.update(label="¡Contexto listo!", state="complete")
+                            st.info("Este PDF se usará como contexto automáticamente al chatear.")
                         else:
-                            status_box.update(label="Procesamiento en curso. Vuelve a intentar listar secciones en unos segundos.", state="running")
+                            status_box.update(label="Preparación en curso. Puedes continuar chateando y volver luego.", state="running")
                     except Exception as e:
-                        st.error(f"Fallo al consultar estado: {e}")
+                        st.error(f"Fallo al consultar progreso: {e}")
 
-            if st.session_state.pdf_sections:
-                st.caption("Selecciona las secciones a incluir como contexto")
-                options = {f"Pág. {s['start_page']+1}-{s['end_page']+1} (≈{s['char_count']} chars)": s["id"] for s in st.session_state.pdf_sections}
-                selected = st.multiselect("Secciones", options=list(options.keys()))
-                st.session_state.selected_section_ids = [options[k] for k in selected]
-                # Mostrar suma de caracteres aproximada
-                approx_chars = sum(next((s["char_count"] for s in st.session_state.pdf_sections if s["id"]==sid), 0) for sid in st.session_state.selected_section_ids)
-                st.caption(f"Contexto seleccionado (aprox.): {approx_chars} caracteres")
+            st.toggle("Usar como contexto en el chat", value=True, key="_use_pdf_context")
+            if st.session_state.get("pdf_file_id") is not None:
+                st.caption(f"file_id actual: {st.session_state.pdf_file_id}")
+
+        # Acordeón avanzado opcional para pruebas de búsqueda
+        with st.expander("Avanzado (opcional)", expanded=False):
+            st.caption("Prueba de búsqueda semántica (top-k)")
+            q = st.text_input("Consulta", key="_emb_q")
+            top_k = st.number_input("top_k", min_value=1, max_value=50, value=5, step=1, key="_emb_k")
+            if st.button("Buscar", use_container_width=True, disabled=not bool(st.session_state.get("pdf_file_id")) or not q):
+                try:
+                    res = api_embeddings_search(q, st.session_state.pdf_file_id, int(top_k))
+                    items = res.get("results", [])
+                    if not items:
+                        st.info("Sin resultados aún (la indexación puede seguir en curso)")
+                    for it in items:
+                        with st.container(border=True):
+                            st.caption(f"sec={it.get('section_id')} ch={it.get('chunk_index')} d={it.get('distance'):.3f}")
+                            st.write(it.get("content", "")[:500])
+                except Exception as e:
+                    st.error(f"Error en búsqueda: {e}")
 
     st.header("Descarga de Chat")
-    st.button("Descargar como Markdown", key="download_md", disabled=True)
-    st.button("Descargar como PDF", key="download_pdf", disabled=True)
-    st.info("La funcionalidad de descarga se implementará próximamente.")
+
+    def _messages_to_markdown(messages: List[Dict[str, str]]) -> str:
+        lines = []
+        lines.append(f"# Conversación - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("")
+        for msg in messages:
+            role = msg.get("role", "assistant")
+            content = msg.get("content", "")
+            header = "## Usuario" if role == "user" else "## Asistente"
+            lines.append(header)
+            lines.append("")
+            lines.append(content)
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _messages_to_pdf_bytes(messages: List[Dict[str, str]]) -> bytes | None:
+        try:
+            # Importar on-demand para no romper si no está instalado en la imagen
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.units import cm
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+            from reportlab.lib import colors
+        except Exception:
+            return None
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+        styles = getSampleStyleSheet()
+        story = []
+
+        title = f"Conversación - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        story.append(Paragraph(f"<b>{title}</b>", styles['Title']))
+        story.append(Spacer(1, 0.5*cm))
+
+        for msg in messages:
+            role = msg.get("role", "assistant")
+            content = msg.get("content", "").replace("\n", "<br/>")
+            header = "Usuario" if role == "user" else "Asistente"
+            story.append(Paragraph(f"<b>{header}</b>", styles['Heading3']))
+            story.append(Spacer(1, 0.1*cm))
+            story.append(Paragraph(content, styles['BodyText']))
+            story.append(Spacer(1, 0.3*cm))
+
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
+
+    messages = st.session_state.get("messages", [])
+    md_bytes = _messages_to_markdown(messages).encode("utf-8") if messages else b""
+    pdf_bytes = _messages_to_pdf_bytes(messages) if messages else None
+
+    col_md, col_pdf = st.columns(2)
+    with col_md:
+        st.download_button(
+            label="Descargar como Markdown",
+            data=md_bytes,
+            file_name=f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            disabled=not bool(messages),
+        )
+    with col_pdf:
+        if messages and pdf_bytes is not None:
+            st.download_button(
+                label="Descargar como PDF",
+                data=pdf_bytes,
+                file_name=f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.button(
+                "Descargar como PDF",
+                disabled=True,
+                use_container_width=True,
+                help=(
+                    "Agrega mensajes para habilitar la descarga. "
+                    "Si ya hay mensajes y sigue deshabilitado, rebuild de la imagen con 'reportlab' es necesario."
+                ),
+            )
 
 # --- Interfaz Principal del Chat ---
 
@@ -256,16 +440,17 @@ Mi pregunta es: {prompt}"""
                 except Exception as e:
                     st.error(f"No se pudo procesar el archivo: {e}")
 
-            # Modo avanzado: NO incrustar el texto de secciones para evitar exceso de tokens.
-            # El backend usará tool-calling (list_sections/get_section_text) con file_id para traer sólo lo necesario.
-            if advanced_pdf_mode and st.session_state.selected_section_ids:
-                st.info("Usando modo agentic: el backend recuperará automáticamente las secciones relevantes del PDF.")
-                full_prompt = prompt
-
-            # Enviar al backend
+            # Enviar al backend usando el contexto del PDF si está activo el toggle
             file_id_to_send = None
-            if advanced_pdf_mode and st.session_state.get("pdf_file_id"):
+            if advanced_pdf_mode and st.session_state.get("pdf_file_id") and st.session_state.get("_use_pdf_context", True):
                 file_id_to_send = st.session_state.pdf_file_id
+                # Avisar si el contexto aún no está listo
+                try:
+                    prog = api_get_progress(file_id_to_send)
+                    if prog.get("phase") != "ready":
+                        st.info("El PDF aún se está preparando (procesando o indexando). Puedes seguir chateando; el contexto se aplicará cuando esté listo.")
+                except Exception:
+                    pass
 
             ai_response = post_chat_message(
                 session_id=st.session_state.session_id,
@@ -276,6 +461,7 @@ Mi pregunta es: {prompt}"""
             
             if ai_response:
                 st.markdown(ai_response)
-                st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                # Refrescar desde backend para garantizar persistencia y habilitar descargas
+                st.session_state.messages = api_get_session_messages(st.session_state.session_id)
             else:
                 st.error("No se recibió respuesta del agente.")

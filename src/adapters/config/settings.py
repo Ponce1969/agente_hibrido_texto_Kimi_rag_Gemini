@@ -54,6 +54,11 @@ class Settings(BaseSettings):
         "sqlite:///./data/chat_history.db",
         description="URL de conexión a la base de datos, apuntando al volumen de Docker.",
     )
+    # URL opcional para Postgres (pgvector). Si no se establece, se ignora y la app sigue usando SQLite.
+    database_url_pg: str | None = Field(
+        default=None,
+        description="URL de conexión a PostgreSQL (opcional) para almacenamiento de embeddings con pgvector.",
+    )
 
     # --- Archivos / Contexto ---
     file_context_max_chars: int = Field(
@@ -71,6 +76,22 @@ class Settings(BaseSettings):
     file_max_pdf_size_mb: int = Field(
         50,
         description="Tamaño máximo permitido para archivos PDF subidos (en MB)",
+    )
+
+    # --- Embeddings / Rendimiento ---
+    embedding_batch_size: int = Field(
+        8,
+        description="Tamaño de lote para encode() del modelo de embeddings. Reducir para equipos con poca RAM (p. ej. 4-8)",
+    )
+
+    # --- Chunking de texto (control por .env) ---
+    embedding_chunk_size: int = Field(
+        1000,
+        description="Tamaño de chunk de texto para indexación de PDFs (caracteres)",
+    )
+    embedding_chunk_overlap: int = Field(
+        200,
+        description="Solapamiento entre chunks de texto (caracteres)",
     )
 
 

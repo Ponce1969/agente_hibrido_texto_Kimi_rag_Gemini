@@ -131,6 +131,28 @@ Este documento define el camino hacia la versión 1.0 y más allá, con el **hit
 
 ---
 
+## ✅ Plan Concreto: RAG Híbrido (PG + pgvector)
+
+> Objetivo: habilitar recuperación semántica sobre PDFs grandes usando una base híbrida (historial en SQLite + embeddings en PostgreSQL con pgvector).
+
+### Pasos
+- [ ] Paso 1: Crear modelos/tablas en PG y repositorio.
+- [ ] Paso 2: Servicio de embeddings y endpoint de indexación.
+- [ ] Paso 3: Búsqueda top-k y endpoint de prueba.
+- [ ] Paso 4: Integración en ChatService para respuestas más contextuales.
+
+### Estado actual (Septiembre 2025)
+- [x] Servicio PostgreSQL con pgvector en `docker-compose.yml` (volumen `pg_data`).
+- [x] Verificación de salud `GET /api/v1/pg/health` (conexión + extensión `vector`).
+- [x] Dependencias añadidas: `pgvector`, `sentence-transformers`, `numpy`.
+- [x] Campo `DATABASE_URL_PG` en configuración (`settings.database_url_pg`).
+- [ ] Modelado de tablas de embeddings en PG.
+- [ ] Servicio de embeddings (chunking + generación + persistencia).
+- [ ] Repositorio de búsqueda vectorial (top-k) y endpoint de prueba.
+- [ ] Integración en `ChatService` (contexto enriquecido por similitud).
+
+---
+
 ## 📅 **Timeline Actualizado**
 
 ### **Sprint Actual: Testing del Domain Layer** 🎯

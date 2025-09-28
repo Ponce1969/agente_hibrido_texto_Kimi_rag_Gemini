@@ -208,3 +208,26 @@ Esta documentación proporciona una **visión completa y actualizada** del proye
 **🎯 Esta documentación evoluciona con el proyecto. Manténla actualizada y útil para todo el equipo.**
 
 *Última actualización: Septiembre 2025*
+
+---
+
+## 🧠 Resumen: Flujo RAG Híbrido (SQLite + PostgreSQL/pgvector)
+
+El proyecto soporta una base híbrida para consultas semánticas sobre PDFs grandes:
+
+- **SQLite**: historial de chat, metadatos, estado de PDFs y secciones (`data/`).
+- **PostgreSQL + pgvector**: almacenamiento de embeddings de chunks para búsqueda por similitud.
+
+### Flujo básico
+1. Subir PDF y procesarlo en secciones: `POST /api/v1/files/upload` → `POST /api/v1/files/process/{file_id}` → `GET /api/v1/files/status/{file_id}`
+2. Indexar en pgvector (opcional desde UI o API): `POST /api/v1/embeddings/index/{file_id}`
+3. Buscar por similitud (debug): `GET /api/v1/embeddings/search?q=...&file_id=...&top_k=5`
+4. Conversar en el chat con modo avanzado (sin secciones seleccionadas): el backend usa RAG (top‑k) automáticamente, con fallback si no hay índice aún.
+
+### Endpoints nuevos de embeddings
+- `POST /api/v1/embeddings/init` — Crea tablas e índices en PostgreSQL.
+- `POST /api/v1/embeddings/index/{file_id}` — Indexa un PDF ya procesado (chunking + embeddings).
+- `GET /api/v1/embeddings/search?q=...&file_id=...&top_k=5` — Búsqueda top‑k por similitud.
+
+### Verificación de PostgreSQL + pgvector
+- `GET /api/v1/pg/health` — Verifica conexión y extensión `vector`.

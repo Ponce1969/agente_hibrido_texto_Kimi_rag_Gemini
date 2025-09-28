@@ -2,7 +2,7 @@
 Endpoints de la API para gestionar el chat.
 """
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 import traceback
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -93,3 +93,76 @@ async def handle_chat(
     except Exception as e:
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"handle_chat error: {e}\n{tb}")
+
+
+class ChatMessageDTO(BaseModel):
+    role: str
+    content: str
+    index: int
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageDTO])
+def get_session_messages_api(
+    session_id: int,
+    session: Session = Depends(get_session),
+):
+    """Devuelve los mensajes persistidos para una sesión de chat."""
+    try:
+        repo = ChatRepository(session)
+        msgs = repo.get_session_messages(session_id)
+        return [
+            ChatMessageDTO(role=m.role.value, content=m.content, index=m.message_index)
+            for m in msgs
+        ]
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"get_session_messages error: {e}\n{tb}")
+
+
+class SessionSummaryDTO(BaseModel):
+    id: int
+    user_id: str
+    session_name: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@router.get("/sessions", response_model=list[SessionSummaryDTO])
+def list_sessions(
+    user_id: str = Query(..., description="Usuario dueño de las sesiones"),
+    limit: int = Query(30, ge=1, le=200),
+    session: Session = Depends(get_session),
+):
+    try:
+        repo = ChatRepository(session)
+        items = repo.get_user_sessions(user_id=user_id, limit=limit)
+        out: list[SessionSummaryDTO] = []
+        for s in items:
+            out.append(
+                SessionSummaryDTO(
+                    id=s.id,
+                    user_id=s.user_id,
+                    session_name=getattr(s, "session_name", None),
+                    created_at=s.created_at.isoformat() if getattr(s, "created_at", None) else None,
+                    updated_at=s.updated_at.isoformat() if getattr(s, "updated_at", None) else None,
+                )
+            )
+        return out
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"list_sessions error: {e}\n{tb}")
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: int, session: Session = Depends(get_session)):
+    try:
+        repo = ChatRepository(session)
+        ok = repo.delete_session(session_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Sesión no encontrada")
+        return {"deleted": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"delete_session error: {e}\n{tb}")

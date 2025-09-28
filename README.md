@@ -133,6 +133,45 @@ docker-compose up --build
 
 ---
 
+## ⚡️ Rendimiento en equipos sin GPU
+
+Si ejecutas el proyecto en una máquina sin GPU o con recursos modestos (por ejemplo, 8–16 GB de RAM), sigue estas recomendaciones para mejorar la experiencia al indexar PDFs y usar RAG:
+
+- **.env**
+  Configura estos parámetros para reducir uso de memoria durante la indexación de embeddings y controlar el chunking de texto. Ajusta a valores menores si notas picos de RAM.
+
+  ```env
+  # Batch del modelo de embeddings (menor = menos RAM, más tiempo)
+  EMBEDDING_BATCH_SIZE=8     # sugerido: 4–8
+
+  # Chunking de texto (caracteres)
+  EMBEDDING_CHUNK_SIZE=1000  # sugerido: 800–1000
+  EMBEDDING_CHUNK_OVERLAP=200 # sugerido: 120–200
+  ```
+
+- **docker-compose.yml**
+  Ya incluye ajustes para reducir paralelismo y persistir caché del modelo (evita re-descargas):
+
+  - Volúmenes del servicio `backend`:
+    - `backend_data:/app/data` para la base SQLite.
+    - `models_cache:/root/.cache` para la caché de `sentence-transformers`.
+  - Variables de entorno orientadas a CPU:
+
+  ```yaml
+  environment:
+    - TOKENIZERS_PARALLELISM=false
+    - OMP_NUM_THREADS=1
+    - INTRA_OP_PARALLELISM_THREADS=1
+    - INTER_OP_PARALLELISM_THREADS=1
+  ```
+
+- **Consejos de uso**
+  - Sube el PDF con el botón “Subir y preparar contexto automáticamente” y espera a que el estado indique “¡Contexto listo!”.
+  - La primera ejecución demora más (descarga el modelo). Las siguientes serán más rápidas gracias a la caché.
+  - Evita cambiar código del backend durante indexaciones largas (el proyecto ya corre sin `--reload` por defecto).
+
+---
+
 ## 📞 **Soporte y Contribución**
 
 ### **Para información detallada:**

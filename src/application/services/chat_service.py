@@ -10,6 +10,9 @@ from src.adapters.db.message import ChatMessageCreate, MessageRole
 from src.adapters.db.chat import ChatSession, ChatSessionCreate
 from src.adapters.db.file_models import FileUpload, FileSection
 from src.adapters.config.settings import settings
+from src.adapters.db.pg_engine import get_pg_engine
+from src.adapters.db.embeddings_repository import EmbeddingsRepository
+from src.application.services.embeddings_service import EmbeddingsService
 
 import io
 from pypdf import PdfReader  # type: ignore
@@ -146,6 +149,105 @@ class ChatService:
                 )
             )
             return ai_response_content
+
+        # RAG con pgvector si hay file_id y NO hay selección explícita de secciones
+        if file_id is not None and not selected_section_ids:
+            try:
+                engine_pg = get_pg_engine()
+                if engine_pg is not None:
+                    repo = EmbeddingsRepository()
+                    repo.ensure_schema()
+                    # Si aún no hay embeddings, devolver un mensaje claro y no forzar indexación costosa en primer intento
+                    try:
+                        if repo.count_chunks(file_id) == 0:
+                            waiting_msg = (
+                                "El PDF aún se está preparando (procesando e indexando). "
+                                "Puedes seguir chateando; el contexto se aplicará automáticamente cuando esté listo."
+                            )
+                            self.repo.add_message(
+                                ChatMessageCreate(
+                                    session_id=session_id,
+                                    role=MessageRole.ASSISTANT,
+                                    content=waiting_msg,
+                                    message_index=0,
+                                )
+                            )
+                            return waiting_msg
+                    except Exception:
+                        # Si la verificación falla, seguimos con el flujo normal sin bloquear
+                        pass
+                    svc = EmbeddingsService(repo)
+                    # Buscar top-k por similitud con la consulta del usuario
+                    results = svc.search(user_message, file_id=file_id, top_k=5)
+                    if not results:
+                        # Evitar forzar indexación on-demand en el primer mensaje para no saturar equipos de bajos recursos
+                        results = []
+                    if results:
+                        # Construir contexto conciso con límite de caracteres
+                        limit = settings.file_context_max_chars
+                        acc = 0
+                        parts: List[str] = []
+                        for r in results:
+                            remaining = limit - acc
+                            if remaining <= 0:
+                                break
+                            snippet = (r.content or "")[:remaining]
+                            parts.append(f"[sec {r.section_id} ch {r.chunk_index} d={r.distance:.3f}]\n{snippet}")
+                            acc += len(snippet)
+                        rag_context = "\n\n".join(parts)
+                        short_prompt = (
+                            "Usa exclusivamente el siguiente contexto relevante recuperado por similitud del PDF para responder de forma concisa.\n"
+                            f"--- CONTEXTO ---\n{rag_context}\n--- FIN CONTEXTO ---\n\n"
+                            f"Pregunta: {user_message}"
+                        )
+
+                        # Reutilizar historial y proveedor preferido
+                        history2 = self.repo.get_session_messages(session_id)
+                        system_prompt2 = get_system_prompt(agent_mode)
+                        prefer_gemini = (
+                            (settings.llm_provider_preference == "gemini_for_pdf_kimi_for_chat")
+                            or bool(use_gemini_fallback)
+                        ) and self.gemini is not None
+
+                        if prefer_gemini:
+                            ai_response_content = await self.gemini.get_chat_completion(
+                                system_prompt=system_prompt2,
+                                messages=history2 + [type('Obj', (), {'role': MessageRole.USER, 'content': short_prompt})()],
+                                max_tokens=min(768, settings.max_tokens),
+                                temperature=settings.temperature,
+                            )
+                        else:
+                            try:
+                                ai_response_content = await self.client.get_chat_completion(
+                                    system_prompt=system_prompt2,
+                                    messages=history2 + [
+                                        type('Obj', (), {'role': MessageRole.USER, 'content': short_prompt})(),
+                                    ],
+                                    max_tokens=min(768, settings.max_tokens),
+                                )
+                            except httpx.HTTPStatusError as e:
+                                if e.response is not None and e.response.status_code == 429 and self.gemini:
+                                    ai_response_content = await self.gemini.get_chat_completion(
+                                        system_prompt=system_prompt2,
+                                        messages=history2 + [type('Obj', (), {'role': MessageRole.USER, 'content': short_prompt})()],
+                                        max_tokens=min(768, settings.max_tokens),
+                                        temperature=settings.temperature,
+                                    )
+                                else:
+                                    raise
+
+                        self.repo.add_message(
+                            ChatMessageCreate(
+                                session_id=session_id,
+                                role=MessageRole.ASSISTANT,
+                                content=ai_response_content,
+                                message_index=0,
+                            )
+                        )
+                        return ai_response_content
+            except Exception:
+                # Silencioso: si el RAG falla por cualquier motivo, seguimos con tool-calling
+                pass
 
         # Tools para PDFs grandes si file_id está presente y NO hay selección explícita
         if file_id is not None:
