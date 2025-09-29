@@ -13,6 +13,40 @@ from src.application.services.embeddings_service import EmbeddingsService
 router = APIRouter()
 
 
+@router.get("/embeddings/health", tags=["Embeddings"], summary="Verifica el estado del sistema de embeddings")
+def embeddings_health():
+    """Verifica la conexión a PostgreSQL y el estado del sistema de embeddings."""
+    engine = get_pg_engine()
+    if engine is None:
+        return {
+            "configured": False,
+            "message": "DATABASE_URL_PG no configurado",
+            "embedding_model": "all-MiniLM-L6-v2",
+            "embedding_dim": 384
+        }
+    
+    try:
+        repo = EmbeddingsRepository()
+        # Verificar que podemos conectar y contar
+        total_chunks = repo.count_chunks(None)  # Contar todos los chunks
+        
+        return {
+            "configured": True,
+            "connected": True,
+            "embedding_model": "all-MiniLM-L6-v2",
+            "embedding_dim": 384,
+            "total_chunks_indexed": total_chunks,
+            "message": "Sistema de embeddings funcionando correctamente"
+        }
+    except Exception as e:
+        return {
+            "configured": True,
+            "connected": False,
+            "error": str(e),
+            "message": f"Error en sistema de embeddings: {e}"
+        }
+
+
 @router.post("/embeddings/init", tags=["Embeddings"], summary="Crea tablas e índices de embeddings en PostgreSQL")
 def embeddings_init():
     engine = get_pg_engine()

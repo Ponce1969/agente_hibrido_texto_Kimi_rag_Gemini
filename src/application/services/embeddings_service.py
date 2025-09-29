@@ -18,8 +18,10 @@ from src.adapters.db.database import engine as sqlite_engine
 from src.adapters.db.file_models import FileUpload, FileSection, FileStatus
 
 
-# Choose a 768-dim model to match repository schema
-EMBEDDING_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # 768 dims
+# Choose a smaller model for low-resource PCs (AMD APU A10, 16GB RAM)
+# all-MiniLM-L6-v2: 384 dims, ~90MB, much faster and less RAM usage
+# all-mpnet-base-v2: 768 dims, ~420MB, better quality but more resources
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"  # 384 dims, optimized for low resources
 
 
 def _chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
@@ -40,18 +42,38 @@ def _chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[s
 class EmbeddingsService:
     def __init__(self, repo: EmbeddingsRepository) -> None:
         self.repo = repo
-        # Lazy import to avoid heavy import times when unused
-        from sentence_transformers import SentenceTransformer  # type: ignore
-
-        self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        self.model = None  # Lazy loading for memory optimization
+        
+    def _get_model(self):
+        """Lazy load the model to save memory when not in use."""
+        if self.model is None:
+            # Lazy import to avoid heavy import times when unused
+            from sentence_transformers import SentenceTransformer  # type: ignore
+            import torch
+            
+            print(f"[Embeddings] Cargando modelo {EMBEDDING_MODEL_NAME} (optimizado para bajos recursos)...")
+            self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+            
+            # Force CPU usage for consistency on AMD APU
+            if hasattr(self.model, 'device'):
+                self.model = self.model.to('cpu')
+                
+        return self.model
 
     def _embed_texts(self, texts: Sequence[str]) -> List[Sequence[float]]:
         # The model returns numpy arrays; convert to python lists of floats
-        vectors = self.model.encode(
+        model = self._get_model()
+        
+        # Use smaller batch size for low-resource systems
+        batch_size = max(1, int(getattr(settings, "embedding_batch_size", 2)))
+        print(f"[Embeddings] Procesando {len(texts)} textos con batch_size={batch_size}")
+        
+        vectors = model.encode(
             list(texts),
             normalize_embeddings=True,
-            batch_size=max(1, int(getattr(settings, "embedding_batch_size", 8))),
-            show_progress_bar=False,
+            batch_size=batch_size,
+            show_progress_bar=True,  # Show progress for user feedback
+            device='cpu',  # Force CPU for AMD APU compatibility
         )
         # Ensure each vector length matches EMBEDDING_DIM
         out: List[Sequence[float]] = []
@@ -113,38 +135,62 @@ class EmbeddingsService:
         self.repo.delete_file_chunks(file_id)
 
         total_inserted = 0
-        for sec in sections:
-            print(f"[Embeddings] Procesando sección id={sec.id} páginas {sec.start_page+1}-{sec.end_page+1}…")
-            parts: List[str] = []
-            for idx in range(sec.start_page, sec.end_page + 1):
+        for sec_idx, sec in enumerate(sections, 1):
+            try:
+                print(f"[Embeddings] Procesando sección {sec_idx}/{len(sections)} (id={sec.id}) páginas {sec.start_page+1}-{sec.end_page+1}…")
+                parts: List[str] = []
+                for idx in range(sec.start_page, sec.end_page + 1):
+                    try:
+                        text = reader.pages[idx].extract_text() or ""
+                    except Exception as e:
+                        print(f"[Embeddings] Error extrayendo página {idx+1}: {e}")
+                        text = ""
+                    parts.append(text)
+                
+                section_text = "\n".join(parts).strip()
+                if not section_text:
+                    print(f"[Embeddings] Sección id={sec.id} sin texto extraíble, se omite.")
+                    continue
+
+                # Validar tamaño del texto antes de procesar
+                if len(section_text) < 50:  # Muy poco texto
+                    print(f"[Embeddings] Sección id={sec.id} tiene muy poco texto ({len(section_text)} chars), se omite.")
+                    continue
+
+                chunk_texts = _chunk_text(section_text, chunk_size=chunk_size, overlap=overlap)
+                print(f"[Embeddings] Sección id={sec.id}: {len(chunk_texts)} chunks para embedir (total chars: {len(section_text)})…")
+                
+                # Procesar embeddings con manejo de errores
                 try:
-                    text = reader.pages[idx].extract_text() or ""
-                except Exception:
-                    text = ""
-                parts.append(text)
-            section_text = "\n".join(parts).strip()
-            if not section_text:
-                print(f"[Embeddings] Sección id={sec.id} sin texto extraíble, se omite.")
-                continue
+                    embeddings = self._embed_texts(chunk_texts)
+                except Exception as e:
+                    print(f"[Embeddings] ERROR generando embeddings para sección {sec.id}: {e}")
+                    continue
 
-            chunk_texts = _chunk_text(section_text, chunk_size=chunk_size, overlap=overlap)
-            print(f"[Embeddings] Sección id={sec.id}: {len(chunk_texts)} chunks para embedir…")
-            embeddings = self._embed_texts(chunk_texts)
-
-            chunks: List[EmbeddingChunk] = []
-            for i, (t, vec) in enumerate(zip(chunk_texts, embeddings)):
-                chunks.append(
-                    EmbeddingChunk(
-                        file_id=file_id,
-                        section_id=sec.id,
-                        chunk_index=i,
-                        content=t,
-                        embedding=vec,
+                chunks: List[EmbeddingChunk] = []
+                for i, (t, vec) in enumerate(zip(chunk_texts, embeddings)):
+                    chunks.append(
+                        EmbeddingChunk(
+                            file_id=file_id,
+                            section_id=sec.id,
+                            chunk_index=i,
+                            content=t,
+                            embedding=vec,
+                        )
                     )
-                )
-            inserted = self.repo.insert_chunks(chunks)
-            total_inserted += inserted
-            print(f"[Embeddings] Sección id={sec.id}: insertados {inserted} chunks (acumulado={total_inserted}).")
+                
+                # Insertar chunks con manejo de errores
+                try:
+                    inserted = self.repo.insert_chunks(chunks)
+                    total_inserted += inserted
+                    print(f"[Embeddings] Sección id={sec.id}: insertados {inserted} chunks (acumulado={total_inserted}).")
+                except Exception as e:
+                    print(f"[Embeddings] ERROR insertando chunks para sección {sec.id}: {e}")
+                    continue
+                    
+            except Exception as e:
+                print(f"[Embeddings] ERROR procesando sección {sec.id}: {e}")
+                continue
 
         return total_inserted
 

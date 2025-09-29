@@ -14,6 +14,7 @@ from src.adapters.db.database import engine
 from sqlmodel import Session as SQLSession
 from src.application.services.embeddings_service import EmbeddingsService
 from src.adapters.db.embeddings_repository import EmbeddingsRepository
+from src.adapters.db.pg_engine import get_pg_engine
 
 router = APIRouter()
 
@@ -274,6 +275,28 @@ def _process_and_index(file_id: int):
                 session.add(fu2)
                 session.commit()
 
+
+def _index_embeddings_bg(file_id: int):
+    """Solo ejecuta indexación de embeddings en background para un file_id ya READY.
+    Idempotente: si ya existen chunks, no hace nada.
+    """
+    try:
+        repo = EmbeddingsRepository()
+        repo.ensure_schema()
+        if repo.count_chunks(file_id) > 0:
+            return
+        svc = EmbeddingsService(repo)
+        svc.index_file(file_id)
+    except Exception as e:
+        # Registrar el error para visibilidad
+        with SQLSession(engine) as session:
+            fu2 = session.get(FileUpload, file_id)
+            if fu2:
+                fu2.error_message = f"bg_index_error: {e}"
+                fu2.updated_at = datetime.utcnow()
+                session.add(fu2)
+                session.commit()
+
 @router.post("/files/process/{file_id}")
 def start_processing(file_id: int, background: BackgroundTasks, session: Session = Depends(get_session)):
     fu = session.get(FileUpload, file_id)
@@ -291,6 +314,30 @@ def start_processing(file_id: int, background: BackgroundTasks, session: Session
     session.commit()
     background.add_task(_process_pdf_into_sections, file_id)
     return {"status": FileStatus.PROCESSING}
+
+
+@router.post("/files/index/{file_id}")
+def trigger_index(file_id: int, background: BackgroundTasks, session: Session = Depends(get_session)):
+    """Dispara la indexación de embeddings en background para un PDF ya procesado.
+    Responde inmediatamente para no bloquear la UI.
+    """
+    fu = session.get(FileUpload, file_id)
+    if not fu:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    if fu.status != FileStatus.READY:
+        # Si aún no está listo, primero hay que procesar secciones
+        raise HTTPException(status_code=409, detail="El archivo aún no está listo para indexación")
+    # Validar PG antes de aceptar el trigger para evitar falso 'OK'
+    if get_pg_engine() is None:
+        raise HTTPException(status_code=400, detail="DATABASE_URL_PG no configurado para embeddings")
+    try:
+        repo = EmbeddingsRepository()
+        if repo.count_chunks(file_id) > 0:
+            return {"status": "ok", "message": "Ya indexado"}
+    except Exception:
+        pass
+    background.add_task(_index_embeddings_bg, file_id)
+    return {"status": "accepted", "message": "Indexación iniciada"}
 
 
 @router.get("/files/status/{file_id}")
@@ -322,9 +369,14 @@ def file_progress(file_id: int, session: Session = Depends(get_session)):
     if fu.status in (FileStatus.PENDING, FileStatus.PROCESSING):
         phase = "processing_sections"
     elif fu.status == FileStatus.READY:
-        # Si no hay embeddings aún, asumimos que está indexando o pendiente de indexar
-        phase = "ready" if chunks > 0 else "indexing_embeddings"
-        detail = {"chunks_indexed": chunks}
+        # Si hay mensaje de error reciente y no hay chunks, reportar error
+        if fu.error_message and (chunks == 0):
+            phase = "error"
+            detail = {"error": fu.error_message}
+        else:
+            # Si no hay embeddings aún, asumimos que está indexando o pendiente de indexar
+            phase = "ready" if chunks > 0 else "indexing_embeddings"
+            detail = {"chunks_indexed": chunks}
     elif fu.status == FileStatus.ERROR:
         phase = "error"
         detail = {"error": fu.error_message}

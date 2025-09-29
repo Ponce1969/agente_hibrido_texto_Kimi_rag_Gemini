@@ -27,6 +27,7 @@ dependencies = [
     "pgvector>=0.2.5",
     "sentence-transformers>=3.0.0",
     "numpy>=1.26.0",
+    "psutil>=7.1.0",
 ]
 
 [project.optional-dependencies]

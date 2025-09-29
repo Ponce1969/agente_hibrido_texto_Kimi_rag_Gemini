@@ -42,6 +42,7 @@ def api_get_session_messages(session_id: int) -> list[dict]:
     except Exception:
         return []
 
+@st.cache_data(show_spinner=False, ttl=10)
 def api_list_files(limit: int = 20) -> list[dict]:
     try:
         r = httpx.get(f"{BACKEND_URL}/files", params={"limit": limit}, timeout=10)
@@ -49,6 +50,22 @@ def api_list_files(limit: int = 20) -> list[dict]:
         return r.json()
     except Exception:
         return []
+
+@st.cache_data(show_spinner=False, ttl=10)
+def api_list_sessions(user_id: str, limit: int = 30) -> list[dict]:
+    try:
+        r = httpx.get(f"{BACKEND_URL}/sessions", params={"user_id": user_id, "limit": limit}, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return []
+
+def api_delete_session(session_id: int) -> bool:
+    try:
+        r = httpx.delete(f"{BACKEND_URL}/sessions/{session_id}", timeout=10)
+        return r.status_code == 200
+    except Exception:
+        return False
 
 def post_chat_message(session_id: int, message: str, mode: AgentMode, file_id: int | None = None) -> str:
     """Envía un mensaje al backend y devuelve la respuesta de la IA."""
@@ -138,6 +155,13 @@ def api_embeddings_index(file_id: int) -> dict:
     return r.json()
 
 
+def api_trigger_index(file_id: int) -> dict:
+    """Dispara indexación en background (respuesta rápida)."""
+    r = httpx.post(f"{BACKEND_URL}/files/index/{file_id}", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
 def api_embeddings_search(q: str, file_id: int | None, top_k: int = 5) -> dict:
     params = {"q": q, "top_k": top_k}
     if file_id is not None:
@@ -175,19 +199,90 @@ with st.sidebar:
         "Sube un archivo para dar contexto a la IA",
         type=["txt", "md", "py", "pdf"] # Se pueden añadir más tipos
     )
+    pdf_flow = st.radio("Modo de contexto PDF", ["Subir nuevo", "Usar existente"], index=1 if st.session_state.get("pdf_file_id") else 0, horizontal=True)
 
-    # Selector de PDF existente
-    with st.expander("Seleccionar PDF existente", expanded=False):
-        files = api_list_files(limit=30)
-        if files:
-            # Mostrar como selectbox: "file_id - filename (status)"
-            options = {f"{it.get('id')} - {it.get('filename')} ({it.get('status')})": it.get('id') for it in files}
-            sel = st.selectbox("Elige un PDF ya cargado", options=list(options.keys()), index=None, placeholder="— seleccionar —")
-            if sel:
-                st.session_state.pdf_file_id = options[sel]
-                st.success(f"PDF seleccionado: file_id={st.session_state.pdf_file_id}")
-        else:
-            st.info("No hay PDFs cargados aún o no se pudo consultar el backend.")
+    # Selector de PDF existente (visible solo si se elige 'Usar existente')
+    if pdf_flow == "Usar existente":
+        with st.expander("Seleccionar PDF existente", expanded=False):
+            files = api_list_files(limit=30)
+            if files:
+                # Mostrar como selectbox: "file_id - filename (status)"
+                options = {f"{it.get('id')} - {it.get('filename')} ({it.get('status')})": it.get('id') for it in files}
+                sel = st.selectbox("Elige un PDF ya cargado", options=list(options.keys()), index=None, placeholder="— seleccionar —")
+                if sel:
+                    st.session_state.pdf_file_id = options[sel]
+                    st.success(f"PDF seleccionado: file_id={st.session_state.pdf_file_id}")
+                    # Verificar estado e iniciar indexación si hace falta (idempotente)
+                    try:
+                        prog = api_get_progress(st.session_state.pdf_file_id)
+                        phase = prog.get("phase")
+                        detail = prog.get("detail") or {}
+                        chunks = int(detail.get("chunks_indexed", 0))
+                        # Siempre intentamos disparar indexación si no hay chunks todavía
+                        if chunks == 0:
+                            try:
+                                api_trigger_index(st.session_state.pdf_file_id)
+                                st.info("Indexación de embeddings iniciada en segundo plano. Puedes chatear; se aplicará al terminar.")
+                                st.session_state._show_progress = True
+                            except Exception as e:
+                                st.warning(f"No se pudo iniciar la indexación automática: {e}")
+                        elif phase in ("processing_sections", "indexing_embeddings"):
+                            st.info("Este PDF aún se está preparando. El contexto se aplicará cuando finalice.")
+                            st.session_state._show_progress = True
+                        # CTA principal: usar este PDF como contexto (habilita el toggle y re-confirma indexación si falta)
+                        if st.button("Usar este PDF como contexto", use_container_width=True, key="_use_existing_pdf_cta"):
+                            st.session_state["_use_pdf_context"] = True
+                            # Asegurar indexación en background si faltan chunks
+                            try:
+                                if chunks == 0:
+                                    api_trigger_index(st.session_state.pdf_file_id)
+                                    st.info("Se inició/confirmó la indexación en segundo plano.")
+                                    st.session_state._show_progress = True
+                            except Exception as e:
+                                st.warning(f"No se pudo confirmar la indexación: {e}")
+
+                        # Opciones avanzadas
+                        with st.expander("Opciones avanzadas", expanded=False):
+                            can_force = (chunks == 0) or (phase in ("processing_sections", "indexing_embeddings"))
+                            if st.button("Forzar indexación ahora", use_container_width=True, disabled=not can_force, key="_force_index_btn"):
+                                try:
+                                    api_trigger_index(st.session_state.pdf_file_id)
+                                    st.success("Indexación forzada: ejecutándose en segundo plano.")
+                                    st.session_state._show_progress = True
+                                except Exception as e:
+                                    st.error(f"No se pudo forzar la indexación: {e}")
+                    except Exception:
+                        pass
+            else:
+                st.info("No hay PDFs cargados aún o no se pudo consultar el backend.")
+
+        # Estado compacto del PDF seleccionado (si hay), SIEMPRE visible
+        if st.session_state.get("pdf_file_id"):
+            col1, col2 = st.columns([1,1])
+            with col1:
+                if st.button("Ver estado de preparación (PDF)", use_container_width=True, key="_check_status_any"):
+                    try:
+                        p = api_get_progress(st.session_state.pdf_file_id)
+                        phase = p.get("phase")
+                        detail = p.get("detail") or {}
+                        chunks = int(detail.get("chunks_indexed", 0))
+                        if phase == "ready" and chunks > 0:
+                            st.success("Contexto listo (embeddings disponibles).")
+                        elif phase in ("processing_sections", "indexing_embeddings"):
+                            st.info(f"Preparando… fase={phase}, chunks={chunks}")
+                        else:
+                            st.warning(f"Estado: {phase} (chunks={chunks})")
+                    except Exception as e:
+                        st.error(f"No se pudo consultar el estado: {e}")
+            with col2:
+                # Badge siempre visible
+                try:
+                    p = api_get_progress(st.session_state.pdf_file_id)
+                    phase = p.get("phase")
+                    badge = "listo" if phase == "ready" else ("preparando" if phase in ("processing_sections", "indexing_embeddings") else phase)
+                    st.caption(f"file_id actual: {st.session_state.pdf_file_id} ({badge})")
+                except Exception:
+                    st.caption(f"file_id actual: {st.session_state.pdf_file_id}")
 
     # Sesiones anteriores
     st.header("Sesiones anteriores")
@@ -230,53 +325,84 @@ with st.sidebar:
     if "pdf_status" not in st.session_state:
         st.session_state.pdf_status = None
 
-    if advanced_pdf_mode and uploaded_file is not None and (uploaded_file.name.lower().endswith(".pdf")):
-        # Flujo simplificado: un botón que sube + procesa + indexa en background y muestra progreso unificado
+    if advanced_pdf_mode:
+        # Flujo simplificado: expander visible aunque aún no haya archivo, botón deshabilitado hasta tener PDF
         with st.expander("Usar PDF como contexto (One‑click)", expanded=True):
-            if st.button("Subir y preparar contexto automáticamente", use_container_width=True):
-                try:
-                    meta = api_upload_pdf(
-                        uploaded_file.name,
-                        uploaded_file.getvalue(),
-                        uploaded_file.type or "application/pdf",
-                        auto_index=True,
-                    )
-                    st.session_state.pdf_file_id = meta["file_id"]
-                    st.success(f"Subido. file_id={meta['file_id']}")
-                except Exception as e:
-                    st.error(f"Error al subir PDF: {e}")
-
-            # Progreso unificado
-            if st.session_state.pdf_file_id is not None:
-                with st.status("Preparando contexto…", expanded=True) as status_box:
+            st.caption("Selecciona o arrastra un PDF arriba. Luego presiona el botón para subir, procesar e indexar automáticamente.")
+            is_pdf_ready = uploaded_file is not None and uploaded_file.name.lower().endswith(".pdf")
+            if st.button(
+                "Subir y preparar contexto automáticamente",
+                use_container_width=True,
+                disabled=not is_pdf_ready,
+            ):
+                if not is_pdf_ready:
+                    st.warning("Primero selecciona un archivo PDF en el cargador de arriba.")
+                else:
                     try:
-                        ready = False
-                        for i in range(20):
-                            p = api_get_progress(st.session_state.pdf_file_id)
-                            phase = p.get("phase")
-                            detail = p.get("detail") or {}
-                            if phase == "processing_sections":
-                                st.write(f"Procesando páginas: {p.get('pages_processed', 0)}/{p.get('total_pages', 0)}")
-                            elif phase == "indexing_embeddings":
-                                st.write(f"Indexando embeddings… chunks={detail.get('chunks_indexed', 0)} (aprox.)")
-                            elif phase == "ready":
-                                ready = True
-                                break
-                            elif phase == "error":
-                                st.error(f"Error: {detail.get('error')}")
-                                break
-                            time.sleep(1)
-                        if ready:
-                            status_box.update(label="¡Contexto listo!", state="complete")
-                            st.info("Este PDF se usará como contexto automáticamente al chatear.")
-                        else:
-                            status_box.update(label="Preparación en curso. Puedes continuar chateando y volver luego.", state="running")
+                        meta = api_upload_pdf(
+                            uploaded_file.name,
+                            uploaded_file.getvalue(),
+                            uploaded_file.type or "application/pdf",
+                            auto_index=True,
+                        )
+                        st.session_state.pdf_file_id = meta["file_id"]
+                        st.success(f"Subido. file_id={meta['file_id']}")
+                        st.session_state._show_progress = True
                     except Exception as e:
-                        st.error(f"Fallo al consultar progreso: {e}")
+                        st.error(f"Error al subir PDF: {e}")
+
+            # Progreso unificado (bajo demanda)
+            if st.session_state.get("pdf_file_id") is not None:
+                col_a, col_b = st.columns([1,1])
+                with col_a:
+                    check_now = st.button("Ver estado de preparación", use_container_width=True)
+                with col_b:
+                    st.caption("Consulta manual para reducir llamadas automáticas al backend.")
+
+                if check_now or st.session_state.get("_show_progress"):
+                    with st.status("Preparando contexto…", expanded=True) as status_box:
+                        try:
+                            ready = False
+                            # Menos iteraciones y menos frecuencia para no saturar: 12*2s ≈ 24s
+                            for i in range(12):
+                                p = api_get_progress(st.session_state.pdf_file_id)
+                                phase = p.get("phase")
+                                detail = p.get("detail") or {}
+                                if phase == "processing_sections":
+                                    st.write(f"Procesando páginas: {p.get('pages_processed', 0)}/{p.get('total_pages', 0)}")
+                                elif phase == "indexing_embeddings":
+                                    st.write(f"Indexando embeddings… chunks={detail.get('chunks_indexed', 0)} (aprox.)")
+                                elif phase == "ready":
+                                    ready = True
+                                    break
+                                elif phase == "error":
+                                    st.error(f"Error: {detail.get('error')}")
+                                    break
+                                time.sleep(2)
+                            if ready:
+                                status_box.update(label="¡Contexto listo!", state="complete")
+                                st.info("Este PDF se usará como contexto automáticamente al chatear.")
+                                st.session_state._show_progress = False
+                            else:
+                                status_box.update(label="Preparación en curso. Puedes continuar chateando y volver luego.", state="running")
+                        except Exception as e:
+                            st.error(f"Fallo al consultar progreso: {e}")
 
             st.toggle("Usar como contexto en el chat", value=True, key="_use_pdf_context")
             if st.session_state.get("pdf_file_id") is not None:
-                st.caption(f"file_id actual: {st.session_state.pdf_file_id}")
+                badge = ""
+                try:
+                    p = api_get_progress(st.session_state.pdf_file_id)
+                    phase = p.get("phase")
+                    if phase == "ready":
+                        badge = " (listo)"
+                    elif phase in ("processing_sections", "indexing_embeddings"):
+                        badge = " (preparando)"
+                    else:
+                        badge = f" ({phase})"
+                except Exception:
+                    pass
+                st.caption(f"file_id actual: {st.session_state.pdf_file_id}{badge}")
 
         # Acordeón avanzado opcional para pruebas de búsqueda
         with st.expander("Avanzado (opcional)", expanded=False):
@@ -440,17 +566,27 @@ Mi pregunta es: {prompt}"""
                 except Exception as e:
                     st.error(f"No se pudo procesar el archivo: {e}")
 
-            # Enviar al backend usando el contexto del PDF si está activo el toggle
+            # Enviar al backend usando el contexto del PDF si está disponible y listo
             file_id_to_send = None
-            if advanced_pdf_mode and st.session_state.get("pdf_file_id") and st.session_state.get("_use_pdf_context", True):
-                file_id_to_send = st.session_state.pdf_file_id
-                # Avisar si el contexto aún no está listo
+            
+            # Verificar si hay un PDF seleccionado (modo avanzado O modo simple)
+            pdf_available = st.session_state.get("pdf_file_id") is not None
+            use_pdf_context = st.session_state.get("_use_pdf_context", True)
+            
+            if pdf_available and use_pdf_context:
                 try:
-                    prog = api_get_progress(file_id_to_send)
-                    if prog.get("phase") != "ready":
-                        st.info("El PDF aún se está preparando (procesando o indexando). Puedes seguir chateando; el contexto se aplicará cuando esté listo.")
-                except Exception:
-                    pass
+                    prog = api_get_progress(st.session_state.pdf_file_id)
+                    phase = prog.get("phase")
+                    detail = prog.get("detail") or {}
+                    chunks = int(detail.get("chunks_indexed", 0))
+                    
+                    if phase == "ready" and chunks > 0:
+                        file_id_to_send = st.session_state.pdf_file_id
+                        st.info(f"🔍 Usando contexto del PDF (file_id={file_id_to_send}, {chunks} chunks indexados)")
+                    else:
+                        st.info("📄 El PDF aún no está listo (procesando o sin embeddings). Enviaré la pregunta sin contexto.")
+                except Exception as e:
+                    st.warning(f"⚠️ No pude verificar el estado del PDF: {e}. Enviaré sin contexto.")
 
             ai_response = post_chat_message(
                 session_id=st.session_state.session_id,

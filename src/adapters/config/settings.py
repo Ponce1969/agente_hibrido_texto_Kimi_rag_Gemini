@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     
     # --- Modelo LLM ---
     groq_model_name: str = Field(
-        "moonshotai/kimi-k2-instruct",
+        "moonshotai/kimi-k2-instruct-0905",
         description="Nombre del modelo de Groq a utilizar.",
     )
     gemini_model_name: str = Field(
@@ -78,20 +78,20 @@ class Settings(BaseSettings):
         description="Tamaño máximo permitido para archivos PDF subidos (en MB)",
     )
 
-    # --- Embeddings / Rendimiento ---
+    # --- Embeddings / Rendimiento (Optimizado para AMD APU A10, 16GB RAM) ---
     embedding_batch_size: int = Field(
-        8,
-        description="Tamaño de lote para encode() del modelo de embeddings. Reducir para equipos con poca RAM (p. ej. 4-8)",
+        2,
+        description="Tamaño de lote para encode() del modelo de embeddings. Optimizado para bajos recursos (2-4)",
     )
 
-    # --- Chunking de texto (control por .env) ---
+    # --- Chunking de texto (optimizado para bajos recursos) ---
     embedding_chunk_size: int = Field(
-        1000,
-        description="Tamaño de chunk de texto para indexación de PDFs (caracteres)",
+        600,
+        description="Tamaño de chunk de texto para indexación de PDFs (caracteres) - reducido para bajos recursos",
     )
     embedding_chunk_overlap: int = Field(
-        200,
-        description="Solapamiento entre chunks de texto (caracteres)",
+        100,
+        description="Solapamiento entre chunks de texto (caracteres) - reducido para bajos recursos",
     )
 
 

@@ -22,7 +22,7 @@ from src.adapters.db.pg_engine import get_pg_engine
 from src.adapters.db.embeddings_models import EmbeddingChunk, SimilarChunk
 
 
-EMBEDDING_DIM = 768  # Adjust if you choose a different embedding model
+EMBEDDING_DIM = 384  # Updated for all-MiniLM-L6-v2 (optimized for low resources)
 TABLE_NAME = "document_chunks"
 
 
@@ -62,12 +62,18 @@ class EmbeddingsRepository:
             res = conn.execute(text(f"DELETE FROM {TABLE_NAME} WHERE file_id = :fid"), {"fid": file_id})
             return res.rowcount or 0
 
-    def count_chunks(self, file_id: int) -> int:
-        """Return number of chunks already indexed for a file_id."""
-        sql = text(f"SELECT COUNT(*) AS c FROM {TABLE_NAME} WHERE file_id = :fid")
+    def count_chunks(self, file_id: int | None = None) -> int:
+        """Return number of chunks already indexed for a file_id. If file_id is None, count all chunks."""
+        if file_id is None:
+            sql = text(f"SELECT COUNT(*) FROM {TABLE_NAME}")
+            params = {}
+        else:
+            sql = text(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE file_id = :fid")
+            params = {"fid": file_id}
+            
         with self.engine.begin() as conn:
-            res = conn.execute(sql, {"fid": file_id}).first()
-            return int(res["c"]) if res is not None else 0
+            res = conn.execute(sql, params).fetchone()
+            return int(res[0]) if res is not None else 0
 
     def insert_chunks(self, chunks: Iterable[EmbeddingChunk]) -> int:
         """Bulk insert chunks. Returns number of inserted rows.
