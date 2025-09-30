@@ -31,8 +31,8 @@ app.include_router(files.router, prefix="/api/v1", tags=["Files"])
 app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"]) 
 app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"]) 
 
-
+# Endpoint de health check
 @app.get("/health", tags=["Monitoring"])
 def health_check():
     """Endpoint para verificar que la API está funcionando."""
-    return {"status": "ok"}
+    return {"status": "healthy", "service": "Asistente IA con RAG"}

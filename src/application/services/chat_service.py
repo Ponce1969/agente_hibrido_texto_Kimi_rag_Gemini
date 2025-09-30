@@ -40,7 +40,13 @@ class ChatService:
         selected_section_ids: Optional[List[int]] = None,
         use_gemini_fallback: Optional[bool] = None,
     ) -> str:
-        """Maneja un nuevo mensaje de usuario y retorna la respuesta de la IA."""
+        """
+        Maneja un nuevo mensaje de usuario y retorna la respuesta de la IA.
+        
+        LÓGICA HÍBRIDA:
+        - Si file_id es None: Chat normal con Kimi-K2 (texto plano, SQLite)
+        - Si file_id existe: RAG con Gemini (búsqueda semántica, PostgreSQL)
+        """
         # 1. Guardar el mensaje del usuario
         self.repo.add_message(
             ChatMessageCreate(
@@ -65,6 +71,45 @@ class ChatService:
             # Último mensaje del usuario ya está en history; no hace falta añadir de nuevo
             return msgs
 
+        # ============================================================
+        # CASO 1: CHAT NORMAL (SIN PDF) - Kimi-K2 + SQLite
+        # ============================================================
+        if file_id is None:
+            # Chat normal sin contexto de PDF
+            # Usar Kimi-K2 (Groq) para conversación general
+            try:
+                ai_response_content = await self.client.get_chat_completion(
+                    system_prompt=system_prompt,
+                    messages=history,
+                    max_tokens=settings.max_tokens,
+                    temperature=settings.temperature,
+                )
+            except httpx.HTTPStatusError as e:
+                # Fallback a Gemini si Kimi falla (429, etc.)
+                if e.response is not None and e.response.status_code == 429 and self.gemini:
+                    ai_response_content = await self.gemini.get_chat_completion(
+                        system_prompt=system_prompt,
+                        messages=history,
+                        max_tokens=settings.max_tokens,
+                        temperature=settings.temperature,
+                    )
+                else:
+                    raise
+            
+            # Guardar respuesta en SQLite
+            self.repo.add_message(
+                ChatMessageCreate(
+                    session_id=session_id,
+                    role=MessageRole.ASSISTANT,
+                    content=ai_response_content,
+                    message_index=0,
+                )
+            )
+            return ai_response_content
+
+        # ============================================================
+        # CASO 2: RAG CON PDF - Gemini + PostgreSQL
+        # ============================================================
         # Si el usuario seleccionó secciones explícitas, construir un contexto conciso y hacer UNA llamada
         if file_id is not None and selected_section_ids:
             from sqlmodel import select
@@ -152,14 +197,21 @@ class ChatService:
 
         # RAG con pgvector si hay file_id y NO hay selección explícita de secciones
         if file_id is not None and not selected_section_ids:
+            print(f"🔍 RAG ACTIVADO: file_id={file_id}, buscando en PostgreSQL...")
             try:
                 engine_pg = get_pg_engine()
+                print(f"🔌 engine_pg = {engine_pg}")
                 if engine_pg is not None:
+                    print(f"✅ Conexión PostgreSQL establecida")
                     repo = EmbeddingsRepository()
                     repo.ensure_schema()
+                    print(f"🔧 Verificando chunks en PostgreSQL para file_id={file_id}")
                     # Si aún no hay embeddings, devolver un mensaje claro y no forzar indexación costosa en primer intento
                     try:
-                        if repo.count_chunks(file_id) == 0:
+                        chunk_count = repo.count_chunks(file_id)
+                        print(f"📊 Chunks encontrados en DB: {chunk_count}")
+                        if chunk_count == 0:
+                            print(f"⚠️ No hay chunks, devolviendo mensaje de espera")
                             waiting_msg = (
                                 "El PDF aún se está preparando (procesando e indexando). "
                                 "Puedes seguir chateando; el contexto se aplicará automáticamente cuando esté listo."
@@ -173,16 +225,20 @@ class ChatService:
                                 )
                             )
                             return waiting_msg
-                    except Exception:
+                        print(f"✅ Hay {chunk_count} chunks, continuando con búsqueda RAG")
+                    except Exception as e:
                         # Si la verificación falla, seguimos con el flujo normal sin bloquear
+                        print(f"⚠️ Error verificando chunks: {e}")
                         pass
                     svc = EmbeddingsService(repo)
                     # Buscar top-k por similitud con la consulta del usuario
                     results = svc.search(user_message, file_id=file_id, top_k=5)
+                    print(f"📊 Búsqueda RAG: encontrados {len(results) if results else 0} chunks")
                     if not results:
                         # Evitar forzar indexación on-demand en el primer mensaje para no saturar equipos de bajos recursos
                         results = []
                     if results:
+                        print(f"✅ Usando {len(results)} chunks para contexto RAG")
                         # Construir contexto conciso con límite de caracteres
                         limit = settings.file_context_max_chars
                         acc = 0
@@ -213,7 +269,7 @@ class ChatService:
                             ai_response_content = await self.gemini.get_chat_completion(
                                 system_prompt=system_prompt2,
                                 messages=history2 + [type('Obj', (), {'role': MessageRole.USER, 'content': short_prompt})()],
-                                max_tokens=min(768, settings.max_tokens),
+                                max_tokens=min(2048, settings.max_tokens),  # Aumentado para respuestas RAG más completas
                                 temperature=settings.temperature,
                             )
                         else:
@@ -245,8 +301,14 @@ class ChatService:
                             )
                         )
                         return ai_response_content
-            except Exception:
-                # Silencioso: si el RAG falla por cualquier motivo, seguimos con tool-calling
+                    else:
+                        print(f"⚠️ Búsqueda RAG no devolvió resultados, cayendo a tools")
+            except Exception as e:
+                # Log del error para debugging
+                print(f"❌ ERROR en RAG: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+                # Seguimos con tool-calling como fallback
                 pass
 
         # Tools para PDFs grandes si file_id está presente y NO hay selección explícita

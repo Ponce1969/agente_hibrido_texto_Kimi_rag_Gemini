@@ -2,14 +2,23 @@
 
 ## 🎯 ¿Qué es este proyecto?
 
-**Asistente de Aprendizaje de Python con IA** es una aplicación web moderna que utiliza inteligencia artificial para ayudar a desarrolladores y estudiantes de Python en su proceso de aprendizaje y desarrollo.
+**Asistente de Aprendizaje de Python con IA** es una aplicación web moderna que utiliza inteligencia artificial para ayudar a desarrolladores y estudiantes de Python en su proceso de aprendizaje y desarrollo. Implementa **arquitectura hexagonal** y **RAG (Retrieval-Augmented Generation)** para proporcionar respuestas contextuales precisas.
 
-### **Características Principales**
-- 🤖 **5 Agentes IA Especializados** en diferentes áreas de Python
-- 📄 **Procesamiento de Documentos PDF** con integración contextual
+### **🌟 Características Principales**
+- 🤖 **5 Agentes IA Especializados** (Arquitecto Python, Ingeniero de Código, Auditor de Seguridad, etc.)
+- 🔍 **RAG con PostgreSQL + pgvector** - Búsqueda semántica en documentos PDF
+- 📄 **Indexación Inteligente de PDFs** con embeddings optimizados
 - 💬 **Chat Persistente** con historial de conversaciones
-- 🚀 **Arquitectura Escalable** lista para crecimiento
+- 🏗️ **Arquitectura Hexagonal** - Código limpio y mantenible
+- ⚡ **Optimizado para Bajos Recursos** (AMD APU, 16GB RAM)
 - 🐳 **Despliegue en Docker** completo y optimizado
+
+### **🆕 Nuevas Funcionalidades (v2.0)**
+- ✅ **Sistema RAG Completamente Operativo** - 522 chunks indexados
+- ✅ **Frontend Refactorizado** - De 603 líneas a arquitectura modular
+- ✅ **Búsqueda Semántica Automática** - Contexto incluido automáticamente
+- ✅ **Modelo de Embeddings Optimizado** - all-MiniLM-L6-v2 (384 dims)
+- ✅ **Manejo Robusto de Errores** - Sistema resiliente y confiable
 
 ---
 
@@ -321,13 +330,60 @@ src/adapters/db/nueva_feature_repository.py
 
 ---
 
+## 🏗️ **Arquitectura del Sistema (v2.0)**
+
+### **Backend - Arquitectura Hexagonal**
+```
+src/
+├── adapters/           # 🔌 Adaptadores (Infraestructura)
+│   ├── api/           # FastAPI endpoints
+│   ├── db/            # PostgreSQL + SQLite repositories
+│   ├── agents/        # Clientes IA (Groq, Gemini)
+│   └── streamlit/     # Frontend modular
+├── application/       # 🔧 Servicios de Aplicación
+│   └── services/      # Lógica de negocio
+└── domain/           # 🏛️ Dominio (Entidades y reglas)
+```
+
+### **Frontend - Streamlit Modular**
+```
+src/adapters/streamlit/
+├── app.py (87 líneas)     # 🎯 Orquestación principal
+├── components/            # 📱 Componentes UI reutilizables
+│   ├── chat_interface.py  # Interfaz de chat
+│   ├── session_manager.py # Gestión de sesiones
+│   └── pdf_context.py     # Gestión de PDFs
+├── services/              # 🔧 Servicios de aplicación
+│   ├── backend_client.py  # Cliente HTTP
+│   ├── session_service.py # Lógica de sesiones
+│   └── file_service.py    # Lógica de archivos
+└── models/               # 📋 DTOs y tipos
+    ├── chat_models.py     # Modelos de chat
+    └── file_models.py     # Modelos de archivos
+```
+
+### **Sistema RAG (Retrieval-Augmented Generation)**
+```
+PostgreSQL + pgvector
+├── document_chunks (384 dims)  # Embeddings vectoriales
+├── Modelo: all-MiniLM-L6-v2   # Optimizado para bajos recursos
+├── Búsqueda semántica         # Top-5 chunks más relevantes
+└── Contexto automático        # Integrado en el chat
+```
+
+---
+
 ## 🎉 **Conclusión**
 
-Este proyecto representa un **asistente de IA moderno y bien arquitecturado** para el aprendizaje de Python. Combina **tecnología de vanguardia** con **buenas prácticas de desarrollo** y una **arquitectura escalable**.
+Este proyecto representa un **asistente de IA moderno y bien arquitecturado** para el aprendizaje de Python. Combina **tecnología de vanguardia** con **buenas prácticas de desarrollo** y una **arquitectura hexagonal escalable**.
 
-**Estado actual**: Listo para desarrollo activo y pruebas de usuario.
+**Estado actual**: ✅ **Sistema RAG completamente operativo** - Listo para producción.
 
-**Próximos pasos**: Completar testing, mejorar documentación, y avanzar hacia RAG avanzado.
+**Logros recientes**:
+- ✅ Refactorización completa del frontend (603 → 87 líneas principales)
+- ✅ Sistema RAG funcionando con 522 chunks indexados
+- ✅ Arquitectura hexagonal implementada
+- ✅ Optimizaciones para hardware de bajos recursos
 
 ---
 

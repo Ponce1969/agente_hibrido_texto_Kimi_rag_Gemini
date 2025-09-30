@@ -52,13 +52,26 @@ class Settings(BaseSettings):
     # --- Base de Datos ---
     database_url: str = Field(
         "sqlite:///./data/chat_history.db",
-        description="URL de conexión a la base de datos, apuntando al volumen de Docker.",
+        description="URL de conexión a la base de datos por defecto (SQLite).",
     )
     # URL opcional para Postgres (pgvector). Si no se establece, se ignora y la app sigue usando SQLite.
     database_url_pg: str | None = Field(
         default=None,
         description="URL de conexión a PostgreSQL (opcional) para almacenamiento de embeddings con pgvector.",
     )
+    
+    # Backend de base de datos a usar
+    db_backend: str = Field(
+        "sqlite",
+        description="Backend de base de datos: sqlite o postgresql"
+    )
+    
+    @property
+    def effective_database_url(self) -> str:
+        """Retorna la URL efectiva de base de datos según la configuración."""
+        if self.db_backend == "postgresql" and self.database_url_pg:
+            return self.database_url_pg
+        return self.database_url
 
     # --- Archivos / Contexto ---
     file_context_max_chars: int = Field(

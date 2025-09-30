@@ -109,7 +109,9 @@ class EmbeddingsRepository:
         """Return top-k most similar chunks using cosine distance (<->).
         If file_id is provided, the search is filtered to that file.
         """
-        params = {"q": list(query_embedding), "k": top_k}
+        # Convertir el embedding a string de array de PostgreSQL
+        embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+        params = {"k": top_k}
         filter_sql = "WHERE file_id = :fid" if file_id is not None else ""
         if file_id is not None:
             params["fid"] = file_id
@@ -117,17 +119,17 @@ class EmbeddingsRepository:
         sql = text(
             f"""
             SELECT id, file_id, section_id, chunk_index, content,
-                   (embedding <-> :q) AS distance
+                   (embedding <-> '{embedding_str}'::vector) AS distance
             FROM {TABLE_NAME}
             {filter_sql}
-            ORDER BY embedding <-> :q
+            ORDER BY embedding <-> '{embedding_str}'::vector
             LIMIT :k
             """
         )
         with self.engine.begin() as conn:
             res = conn.execute(sql, params)
             out: List[SimilarChunk] = []
-            for row in res:
+            for row in res.mappings():  # Usar mappings() para acceder por nombre de columna
                 out.append(
                     SimilarChunk(
                         id=row["id"],

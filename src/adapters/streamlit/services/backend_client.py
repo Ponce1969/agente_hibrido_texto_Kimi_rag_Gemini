@@ -1,0 +1,247 @@
+"""
+Cliente HTTP para comunicación con el backend.
+Adaptador que encapsula todas las llamadas HTTP.
+"""
+import httpx
+import streamlit as st
+from typing import List, Optional, Dict, Any
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from models.chat_models import ChatMessage, ChatSession, ChatRequest, ChatResponse, AgentMode
+from models.file_models import FileUploadInfo, FileProgress, FileSection, EmbeddingSearchResult
+
+
+class BackendClient:
+    """Cliente para comunicación con el backend API."""
+    
+    def __init__(self, base_url: str = None):
+        # Detectar si estamos en Docker o desarrollo local
+        import os
+        if base_url is None:
+            # En Docker, usar el nombre del servicio
+            if os.environ.get("DOCKER_ENV") == "true" or os.path.exists("/.dockerenv"):
+                base_url = "http://backend:8000/api/v1"
+            else:
+                base_url = "http://localhost:8000/api/v1"
+        
+        self.base_url = base_url
+        self.user_id = "streamlit_user"
+    
+    def test_connection(self) -> tuple[bool, str]:
+        """Prueba la conexión con el backend."""
+        try:
+            response = httpx.get(f"{self.base_url.replace('/api/v1', '')}/health", timeout=5)
+            if response.status_code == 200:
+                return True, f"✅ Conectado a {self.base_url}"
+            else:
+                return False, f"❌ Error {response.status_code}: {response.text}"
+        except Exception as e:
+            return False, f"❌ Error de conexión: {e}"
+    
+    # === Sesiones de Chat ===
+    
+    def create_session(self) -> int:
+        """Crea una nueva sesión de chat."""
+        try:
+            response = httpx.post(
+                f"{self.base_url}/sessions", 
+                json={"user_id": self.user_id}
+            )
+            response.raise_for_status()
+            return response.json()["id"]
+        except Exception:
+            return 0
+    
+    def get_session_messages(self, session_id: int) -> List[ChatMessage]:
+        """Obtiene los mensajes de una sesión."""
+        try:
+            response = httpx.get(
+                f"{self.base_url}/sessions/{session_id}/messages", 
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            return [
+                ChatMessage(
+                    role=msg["role"],
+                    content=msg["content"],
+                    message_index=msg["message_index"],
+                    created_at=msg.get("created_at")
+                )
+                for msg in data
+            ]
+        except Exception:
+            return []
+    
+    @st.cache_data(show_spinner=False, ttl=10)
+    def list_sessions(_self, limit: int = 30) -> List[ChatSession]:
+        """Lista las sesiones del usuario."""
+        try:
+            response = httpx.get(
+                f"{_self.base_url}/sessions", 
+                params={"user_id": _self.user_id, "limit": limit}, 
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            return [
+                ChatSession(
+                    id=session["id"],
+                    user_id=session["user_id"],
+                    session_name=session.get("session_name"),
+                    created_at=session["created_at"],
+                    message_count=session.get("message_count", 0)
+                )
+                for session in data
+            ]
+        except Exception:
+            return []
+    
+    def delete_session(self, session_id: int) -> bool:
+        """Elimina una sesión."""
+        try:
+            response = httpx.delete(f"{self.base_url}/sessions/{session_id}", timeout=10)
+            return response.status_code == 200
+        except Exception:
+            return False
+    
+    def send_chat_message(self, request: ChatRequest) -> ChatResponse:
+        """Envía un mensaje de chat al backend."""
+        try:
+            payload = {
+                "session_id": request.session_id,
+                "message": request.message,
+                "mode": request.mode.value
+            }
+            if request.file_id is not None:
+                payload["file_id"] = request.file_id
+            if request.selected_section_ids:
+                payload["selected_section_ids"] = request.selected_section_ids
+            
+            response = httpx.post(
+                f"{self.base_url}/chat",
+                json=payload,
+                timeout=120
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            return ChatResponse(
+                content=data.get("reply", ""),  # El backend devuelve "reply", no "response"
+                success=True
+            )
+        except httpx.TimeoutException:
+            return ChatResponse(
+                content="",
+                success=False,
+                error="Timeout: El agente tardó demasiado en responder"
+            )
+        except httpx.HTTPStatusError as e:
+            return ChatResponse(
+                content="",
+                success=False,
+                error=f"Error del servidor: {e.response.status_code}"
+            )
+        except Exception as e:
+            return ChatResponse(
+                content="",
+                success=False,
+            )
+    
+    # === Gestión de Archivos ===
+    
+    def list_files(self, limit: int = 30) -> List[FileUploadInfo]:
+        """Lista los archivos subidos."""
+        try:
+            response = httpx.get(f"{self.base_url}/files", params={"limit": limit}, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            return [FileUploadInfo(**item) for item in data]
+        except httpx.ConnectError:
+            import streamlit as st
+            st.error("🔌 Error de conexión con el backend. Verifica que esté funcionando.")
+            return []
+        except Exception as e:
+            import streamlit as st
+            st.error(f"❌ Error obteniendo archivos: {e}")
+            return []
+    
+    def upload_pdf(self, file_name: str, file_bytes: bytes, mime: str, auto_index: bool = False) -> Dict[str, Any]:
+        """Sube un archivo PDF."""
+        files = {
+            "file": (file_name, file_bytes, mime or "application/pdf"),
+        }
+        params = {"auto_index": "true" if auto_index else "false"}
+        response = httpx.post(f"{self.base_url}/files/upload", files=files, params=params, timeout=60)
+        response.raise_for_status()
+        return response.json()
+    
+    def get_file_progress(self, file_id: int) -> FileProgress:
+        """Obtiene el progreso de procesamiento de un archivo."""
+        response = httpx.get(f"{self.base_url}/files/progress/{file_id}", timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        return FileProgress(
+            phase=data["phase"],
+            status=data["status"],
+            pages_processed=data["pages_processed"],
+            total_pages=data["total_pages"],
+            detail=data.get("detail")
+        )
+    
+    def start_file_processing(self, file_id: int) -> Dict[str, Any]:
+        """Inicia el procesamiento de un archivo."""
+        response = httpx.post(f"{self.base_url}/files/process/{file_id}", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    
+    def get_file_sections(self, file_id: int) -> List[FileSection]:
+        """Obtiene las secciones de un archivo."""
+        response = httpx.get(f"{self.base_url}/files/{file_id}/sections", timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        return [
+            FileSection(
+                id=section["id"],
+                file_id=section["file_id"],
+                title=section["title"],
+                start_page=section["start_page"],
+                end_page=section["end_page"],
+                content_preview=section.get("content_preview")
+            )
+            for section in data
+        ]
+    
+    # === Embeddings ===
+    
+    def trigger_indexing(self, file_id: int) -> Dict[str, Any]:
+        """Dispara la indexación de embeddings."""
+        response = httpx.post(f"{self.base_url}/files/index/{file_id}", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    
+    def search_embeddings(self, query: str, file_id: Optional[int], top_k: int = 5) -> List[EmbeddingSearchResult]:
+        """Busca en los embeddings."""
+        params = {"q": query, "top_k": top_k}
+        if file_id is not None:
+            params["file_id"] = file_id
+        
+        response = httpx.get(f"{self.base_url}/embeddings/search", params=params, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        
+        return [
+            EmbeddingSearchResult(
+                id=result["id"],
+                file_id=result["file_id"],
+                section_id=result["section_id"],
+                chunk_index=result["chunk_index"],
+                distance=result["distance"],
+                content=result["content"]
+            )
+            for result in data.get("results", [])
+        ]

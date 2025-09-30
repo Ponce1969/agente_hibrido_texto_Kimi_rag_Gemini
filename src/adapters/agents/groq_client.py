@@ -12,7 +12,7 @@ class GroqClient:
         self.client = client
 
     async def get_chat_completion(
-        self, system_prompt: str, messages: list[ChatMessage], *, max_tokens: int | None = None
+        self, system_prompt: str, messages: list[ChatMessage], *, max_tokens: int | None = None, temperature: float | None = None
     ) -> str:
         """Obtiene una respuesta de chat de la API de Groq."""
         api_messages = [
@@ -32,7 +32,7 @@ class GroqClient:
             json={
                 "messages": api_messages,
                 "model": settings.groq_model_name,
-                "temperature": settings.temperature,
+                "temperature": temperature if temperature is not None else settings.temperature,
                 "max_tokens": max_tokens or settings.max_tokens,
             },
             timeout=httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=10.0),
