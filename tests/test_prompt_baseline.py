@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 @pytest.mark.unit
+@pytest.mark.baseline
 class TestPromptBaseline:
     """
     Tests que capturan el estado actual de los prompts.
@@ -22,7 +23,7 @@ class TestPromptBaseline:
         
         modes = [
             "Arquitecto Python Senior",
-            "Ingeniero de Código Limpio",
+            "Ingeniero de Código",
             "Auditor de Seguridad",
             "Especialista en Bases de Datos",
             "Ingeniero de Refactoring"
@@ -98,6 +99,7 @@ class TestPromptBaseline:
 
 
 @pytest.mark.unit
+@pytest.mark.baseline
 class TestPromptTokenCounting:
     """Tests para medir tokens de los prompts actuales."""
     
@@ -110,7 +112,7 @@ class TestPromptTokenCounting:
         
         modes = [
             "Arquitecto Python Senior",
-            "Ingeniero de Código Limpio",
+            "Ingeniero de Código",
             "Auditor de Seguridad",
             "Especialista en Bases de Datos",
             "Ingeniero de Refactoring"
@@ -191,7 +193,7 @@ class TestPromptConsistency:
         
         modes = [
             "Arquitecto Python Senior",
-            "Ingeniero de Código Limpio",
+            "Ingeniero de Código",
             "Auditor de Seguridad"
         ]
         
@@ -212,6 +214,7 @@ class TestPromptConsistency:
 
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.baseline
 class TestPromptPerformanceBaseline:
     """Tests de performance con prompts actuales."""
     

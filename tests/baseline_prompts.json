@@ -1,0 +1,37 @@
+{
+  "Arquitecto Python Senior": {
+    "length": 1515,
+    "estimated_tokens": 378,
+    "has_tools": false,
+    "has_examples": false,
+    "has_constraints": true
+  },
+  "Ingeniero de C\u00f3digo": {
+    "length": 1414,
+    "estimated_tokens": 353,
+    "has_tools": false,
+    "has_examples": false,
+    "has_constraints": true
+  },
+  "Auditor de Seguridad": {
+    "length": 983,
+    "estimated_tokens": 245,
+    "has_tools": false,
+    "has_examples": false,
+    "has_constraints": true
+  },
+  "Especialista en Bases de Datos": {
+    "length": 1279,
+    "estimated_tokens": 319,
+    "has_tools": false,
+    "has_examples": false,
+    "has_constraints": true
+  },
+  "Ingeniero de Refactoring": {
+    "length": 1458,
+    "estimated_tokens": 364,
+    "has_tools": false,
+    "has_examples": false,
+    "has_constraints": true
+  }
+}

@@ -91,7 +91,7 @@ class TestChatServicePrompts:
         
         agent_modes = [
             "Arquitecto Python Senior",
-            "Ingeniero de Código Limpio",
+            "Ingeniero de Código",
             "Auditor de Seguridad",
             "Especialista en Bases de Datos",
             "Ingeniero de Refactoring"
