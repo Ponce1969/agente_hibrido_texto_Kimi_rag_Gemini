@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from pathvalidate import sanitize_filename
 from uuid import uuid4
 import os
-from datetime import datetime
+from datetime import datetime, UTC
 from src.adapters.db.file_models import FileUpload, FileSection, FileStatus
 from src.adapters.db.database import engine
 from sqlmodel import Session as SQLSession
@@ -165,8 +165,8 @@ async def upload_file(
         pages_processed=0,
         status=FileStatus.PENDING,
         error_message=None,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     session.add(fu)
     session.commit()
@@ -229,18 +229,18 @@ def _process_pdf_into_sections(file_id: int):
 
                 # Progreso (cada ventana)
                 fu.pages_processed = min(total_pages, end + 1)
-                fu.updated_at = datetime.utcnow()
+                fu.updated_at = datetime.now(UTC)
                 session.add(fu)
                 session.commit()
 
             fu.status = FileStatus.READY
-            fu.updated_at = datetime.utcnow()
+            fu.updated_at = datetime.now(UTC)
             session.add(fu)
             session.commit()
         except Exception as e:
             fu.status = FileStatus.ERROR
             fu.error_message = str(e)
-            fu.updated_at = datetime.utcnow()
+            fu.updated_at = datetime.now(UTC)
             session.add(fu)
             session.commit()
 
@@ -271,7 +271,7 @@ def _process_and_index(file_id: int):
             fu2 = session.get(FileUpload, file_id)
             if fu2:
                 fu2.error_message = f"index_error: {e}"
-                fu2.updated_at = datetime.utcnow()
+                fu2.updated_at = datetime.now(UTC)
                 session.add(fu2)
                 session.commit()
 
@@ -293,7 +293,7 @@ def _index_embeddings_bg(file_id: int):
             fu2 = session.get(FileUpload, file_id)
             if fu2:
                 fu2.error_message = f"bg_index_error: {e}"
-                fu2.updated_at = datetime.utcnow()
+                fu2.updated_at = datetime.now(UTC)
                 session.add(fu2)
                 session.commit()
 
@@ -309,7 +309,7 @@ def start_processing(file_id: int, background: BackgroundTasks, session: Session
     # pending o error → reintentar
     fu.status = FileStatus.PENDING
     fu.pages_processed = 0
-    fu.updated_at = datetime.utcnow()
+    fu.updated_at = datetime.now(UTC)
     session.add(fu)
     session.commit()
     background.add_task(_process_pdf_into_sections, file_id)

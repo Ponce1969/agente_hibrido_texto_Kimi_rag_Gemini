@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, UTC
 from sqlalchemy import select, and_, or_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,7 +77,7 @@ class SQLChatRepository(ChatRepositoryInterface):
         """Crea una nueva sesión de chat."""
         db_session = DBSession(
             user_id=user_id,
-            session_name=session_name or f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+            session_name=session_name or f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
         )
 
         self.session.add(db_session)
@@ -98,7 +98,7 @@ class SQLChatRepository(ChatRepositoryInterface):
 
         # Actualizar campos
         db_session.session_name = session.session_name
-        db_session.updated_at = datetime.utcnow()
+        db_session.updated_at = datetime.now(UTC)
         db_session.is_active = session.is_active
         db_session.extra_data = str(session.metadata) if session.metadata else None
 
@@ -296,7 +296,7 @@ class SQLFileRepository(FileRepositoryInterface):
         db_file.pages_processed = file.pages_processed
         db_file.status = file.status
         db_file.error_message = file.error_message
-        db_file.updated_at = datetime.utcnow()
+        db_file.updated_at = datetime.now(UTC)
 
         await self.session.commit()
         await self.session.refresh(db_file)

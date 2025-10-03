@@ -74,8 +74,8 @@ class ChatSession:
     """Representa una sesión de conversación."""
     user_id: str
     session_name: str | None = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     is_active: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -96,7 +96,7 @@ class ChatSession:
             raise ValueError("El mensaje no pertenece a esta sesión")
 
         # Actualizar timestamp
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(UTC)
 
         # Agregar mensaje
         self.messages.append(message)
@@ -155,7 +155,7 @@ class FileDocument:
     file_path: str
     file_size: int
     content_type: str
-    uploaded_at: datetime = field(default_factory=datetime.utcnow)
+    uploaded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # Estado del procesamiento
     status: str = "pending"  # pending, processing, ready, error

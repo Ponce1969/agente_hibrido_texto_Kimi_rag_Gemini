@@ -265,13 +265,13 @@ class SQLChatRepositoryAdapter(ChatRepositoryPort):
     def _db_session_to_domain(self, db_session: ChatSessionDB) -> ChatSession:
         """Convierte modelo de DB a modelo de dominio."""
         from src.domain.models import ChatSession
-        from datetime import datetime
+        from datetime import datetime, UTC
         
         return ChatSession(
             user_id=db_session.user_id,
             session_name=getattr(db_session, 'title', None),
-            created_at=db_session.created_at or datetime.utcnow(),
-            updated_at=db_session.updated_at or datetime.utcnow(),
+            created_at=db_session.created_at or datetime.now(UTC),
+            updated_at=db_session.updated_at or datetime.now(UTC),
             is_active=True,
             metadata={},
             messages=[],
@@ -281,13 +281,13 @@ class SQLChatRepositoryAdapter(ChatRepositoryPort):
         """Convierte modelo de DB a modelo de dominio."""
         from src.domain.models import ChatMessage, MessageRole
         
-        from datetime import datetime
+        from datetime import datetime, UTC
         
         return ChatMessage(
             session_id=db_message.session_id,
             role=MessageRole(db_message.role),
             content=db_message.content,
-            timestamp=getattr(db_message, 'created_at', datetime.utcnow()),
+            timestamp=getattr(db_message, 'created_at', datetime.now(UTC)),
             message_index=db_message.message_index,
             metadata={},
             token_count=None,

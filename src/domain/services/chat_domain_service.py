@@ -7,7 +7,7 @@ de repositorio, independientes de cualquier framework o tecnología específica.
 from __future__ import annotations
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, UTC
 import uuid
 
 from ..models.chat_models import ChatSession, ChatMessage, MessageRole, FileDocument, FileSection
@@ -42,7 +42,7 @@ class ChatDomainService:
         # Crear la nueva sesión
         session = ChatSession(
             user_id=user_id,
-            session_name=session_name or f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+            session_name=session_name or f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
         )
 
         return await self.chat_repository.create_session(user_id, session_name)
@@ -75,7 +75,7 @@ class ChatDomainService:
             session_id=session_id,
             role=role,
             content=content,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             message_index=len(session.messages)
         )
 

@@ -66,13 +66,13 @@ class MockRepositoryPort(ChatRepositoryPort):
         self.message_counter = 0
     
     def create_session(self, session_data: ChatSessionCreate) -> ChatSession:
-        from datetime import datetime
+        from datetime import datetime, UTC
         
         session = ChatSession(
             user_id=session_data.user_id,
             session_name=session_data.title,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         session_id = "test_session_1"
         self.sessions[session_id] = session
@@ -99,7 +99,7 @@ class MockRepositoryPort(ChatRepositoryPort):
         return False
     
     def add_message(self, message_data: ChatMessageCreate) -> ChatMessage:
-        from datetime import datetime
+        from datetime import datetime, UTC
         
         self.message_counter += 1
         # session_id puede ser string o int, manejamos ambos
@@ -112,7 +112,7 @@ class MockRepositoryPort(ChatRepositoryPort):
             session_id=session_id_int,
             role=message_data.role,
             content=message_data.content,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             message_index=self.message_counter,
         )
         
