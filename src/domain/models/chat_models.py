@@ -3,12 +3,14 @@ Modelos de dominio puros para el asistente de aprendizaje de Python.
 
 Estos modelos representan entidades de negocio independientes de cualquier
 tecnología de persistencia o presentación.
+
+Tipado estricto para mypy --strict con Python 3.12+
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import List, Optional, Dict, Any
+from datetime import datetime, UTC
+from typing import Any
 from enum import Enum
 
 
@@ -28,8 +30,8 @@ class ChatMessage:
     content: str
     timestamp: datetime
     message_index: int
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    token_count: Optional[int] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    token_count: int | None = None
 
     def __post_init__(self) -> None:
         """Validación después de inicialización."""
@@ -54,7 +56,7 @@ class ChatMessage:
         """Verifica si el mensaje es del sistema."""
         return self.role == MessageRole.SYSTEM
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convierte el mensaje a diccionario."""
         return {
             "session_id": self.session_id,
@@ -71,14 +73,14 @@ class ChatMessage:
 class ChatSession:
     """Representa una sesión de conversación."""
     user_id: str
-    session_name: Optional[str] = None
+    session_name: str | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
     is_active: bool = True
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Relación con mensajes (no se incluye en __init__)
-    messages: List[ChatMessage] = field(default_factory=list)
+    messages: list[ChatMessage] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validación después de inicialización."""
@@ -106,15 +108,15 @@ class ChatSession:
         """Retorna el número de mensajes en la sesión."""
         return len(self.messages)
 
-    def get_user_messages(self) -> List[ChatMessage]:
+    def get_user_messages(self) -> list[ChatMessage]:
         """Retorna solo los mensajes del usuario."""
         return [msg for msg in self.messages if msg.is_from_user()]
 
-    def get_assistant_messages(self) -> List[ChatMessage]:
+    def get_assistant_messages(self) -> list[ChatMessage]:
         """Retorna solo los mensajes del asistente."""
         return [msg for msg in self.messages if msg.is_from_assistant()]
 
-    def get_last_message(self) -> Optional[ChatMessage]:
+    def get_last_message(self) -> ChatMessage | None:
         """Retorna el último mensaje de la sesión."""
         return self.messages[-1] if self.messages else None
 
@@ -122,7 +124,7 @@ class ChatSession:
         """Verifica si la sesión está vacía."""
         return len(self.messages) == 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convierte la sesión a diccionario."""
         return {
             "user_id": self.user_id,
@@ -157,12 +159,12 @@ class FileDocument:
 
     # Estado del procesamiento
     status: str = "pending"  # pending, processing, ready, error
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     # Información del contenido
     total_pages: int = 0
     pages_processed: int = 0
-    sections: List[FileSection] = field(default_factory=list)
+    sections: list[FileSection] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validación después de inicialización."""
@@ -183,7 +185,7 @@ class FileDocument:
         self.sections.append(section)
         self.pages_processed += (section.end_page - section.start_page + 1)
 
-    def get_section(self, section_id: int) -> Optional[FileSection]:
+    def get_section(self, section_id: int) -> FileSection | None:
         """Obtiene una sección por ID."""
         return next((s for s in self.sections if s.id == section_id), None)
 
@@ -204,7 +206,7 @@ class FileDocument:
         self.status = "error"
         self.error_message = error_message
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convierte el documento a diccionario."""
         return {
             "filename_original": self.filename_original,
@@ -235,7 +237,7 @@ class FileDocument:
 class FileSection:
     """Representa una sección de un documento."""
     file_id: int
-    title: Optional[str]
+    title: str | None
     start_page: int
     end_page: int
     char_count: int
@@ -264,7 +266,7 @@ class FileSection:
         """Verifica si la sección tiene contenido de texto."""
         return bool(self.text_content.strip())
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convierte la sección a diccionario."""
         return {
             "file_id": self.file_id,
@@ -285,3 +287,46 @@ class FileSection:
     def id(self, value: int) -> None:
         """Establece el ID de la sección."""
         self._id = value
+
+
+# ============================================================================
+# DTOs para Creación (Data Transfer Objects)
+# ============================================================================
+
+@dataclass
+class ChatSessionCreate:
+    """DTO para crear una nueva sesión de chat."""
+    
+    title: str
+    user_id: str = "default_user"
+    metadata: dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self) -> None:
+        """Validación después de inicialización."""
+        if not self.title.strip():
+            raise ValueError("El título no puede estar vacío")
+        
+        if len(self.title) > 200:
+            raise ValueError("El título es demasiado largo")
+
+
+@dataclass
+class ChatMessageCreate:
+    """DTO para crear un nuevo mensaje."""
+    
+    session_id: str
+    role: MessageRole
+    content: str
+    message_index: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self) -> None:
+        """Validación después de inicialización."""
+        if not self.content.strip():
+            raise ValueError("El contenido no puede estar vacío")
+        
+        if len(self.content) > 100000:
+            raise ValueError("El contenido es demasiado largo")
+        
+        if self.message_index < 0:
+            raise ValueError("El índice debe ser no negativo")
