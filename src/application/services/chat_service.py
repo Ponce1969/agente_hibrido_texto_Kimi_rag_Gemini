@@ -76,14 +76,26 @@ class ChatService:
         # ============================================================
         if file_id is None:
             # Chat normal sin contexto de PDF
-            # Usar Kimi-K2 (Groq) para conversación general
+            # Usar Kimi-K2 (Groq) para conversación general con caché
             try:
-                ai_response_content = await self.client.get_chat_completion(
+                ai_response_content, metrics = await self.client.get_chat_completion(
                     system_prompt=system_prompt,
                     messages=history,
                     max_tokens=settings.max_tokens,
                     temperature=settings.temperature,
+                    session_id=session_id,  # Para caché
+                    agent_mode=agent_mode,  # Para caché
+                    use_cache=True  # Activar sistema de caché
                 )
+                
+                # Log de métricas si están disponibles
+                if metrics:
+                    print(f"📊 Tokens: {metrics.total_tokens} "
+                          f"(system: {metrics.system_tokens}, "
+                          f"history: {metrics.history_tokens}, "
+                          f"user: {metrics.user_tokens}) "
+                          f"{'[CACHED]' if metrics.is_cached else '[FULL]'}")
+                    
             except httpx.HTTPStatusError as e:
                 # Fallback a Gemini si Kimi falla (429, etc.)
                 if e.response is not None and e.response.status_code == 429 and self.gemini:

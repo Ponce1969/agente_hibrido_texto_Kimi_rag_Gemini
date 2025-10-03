@@ -5,6 +5,7 @@ from src.adapters.api.endpoints import chat
 from src.adapters.api.endpoints import files
 from src.adapters.api.endpoints import pg
 from src.adapters.api.endpoints import embeddings
+from src.adapters.api import metrics
 from src.adapters.db.database import create_db_and_tables
 
 
@@ -29,7 +30,8 @@ app = FastAPI(
 app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
 app.include_router(files.router, prefix="/api/v1", tags=["Files"])
 app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"]) 
-app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"]) 
+app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"])
+app.include_router(metrics.router, tags=["Metrics"])  # Métricas de tokens 
 
 # Endpoint de health check
 @app.get("/health", tags=["Monitoring"])
