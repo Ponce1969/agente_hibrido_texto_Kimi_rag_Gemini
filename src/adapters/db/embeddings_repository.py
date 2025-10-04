@@ -22,7 +22,7 @@ from src.adapters.db.pg_engine import get_pg_engine
 from src.adapters.db.embeddings_models import EmbeddingChunk, SimilarChunk
 
 
-EMBEDDING_DIM = 384  # Updated for all-MiniLM-L6-v2 (optimized for low resources)
+EMBEDDING_DIM = 768  # Updated for Gemini text-embedding-004 (API-based, no local resources)
 TABLE_NAME = "document_chunks"
 
 
