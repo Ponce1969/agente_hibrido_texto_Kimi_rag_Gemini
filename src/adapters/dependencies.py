@@ -12,11 +12,13 @@ from functools import lru_cache
 import httpx
 from sqlmodel import Session
 
-from src.domain.ports import LLMPort, ChatRepositoryPort
+from src.domain.ports import LLMPort, ChatRepositoryPort, EmbeddingsPort
 from src.adapters.agents.groq_adapter import GroqAdapter
 from src.adapters.agents.gemini_adapter import GeminiAdapter
+from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapter
 from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
 from src.application.services.chat_service_v2 import ChatServiceV2
+from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
 from src.adapters.db.database import get_session
 
 
@@ -131,3 +133,57 @@ def get_chat_service_dependency(
         Servicio de chat configurado
     """
     return get_chat_service(session)
+
+
+# ============================================================================
+# Adaptadores de Embeddings
+# ============================================================================
+
+def get_gemini_embeddings_adapter() -> EmbeddingsPort:
+    """
+    Crea un adaptador de Gemini Embeddings.
+    
+    Returns:
+        Adaptador de Gemini Embeddings que implementa EmbeddingsPort
+    """
+    client = get_http_client()
+    return GeminiEmbeddingsAdapter(client)
+
+
+# ============================================================================
+# Servicio de Embeddings
+# ============================================================================
+
+def get_embeddings_service() -> EmbeddingsServiceV2:
+    """
+    Crea el servicio de embeddings con todas sus dependencias inyectadas.
+    
+    Returns:
+        Servicio de embeddings configurado
+    """
+    # Crear adaptador de embeddings
+    embeddings_client = get_gemini_embeddings_adapter()
+    
+    # Crear servicio con dependencias inyectadas
+    return EmbeddingsServiceV2(
+        embeddings_client=embeddings_client,
+    )
+
+
+def get_embeddings_service_dependency() -> EmbeddingsServiceV2:
+    """
+    Dependencia de FastAPI para obtener el servicio de embeddings.
+    
+    Uso en endpoints:
+    ```python
+    @router.post("/index")
+    async def index_endpoint(
+        service: EmbeddingsServiceV2 = Depends(get_embeddings_service_dependency)
+    ):
+        ...
+    ```
+    
+    Returns:
+        Servicio de embeddings configurado
+    """
+    return get_embeddings_service()
