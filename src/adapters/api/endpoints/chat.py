@@ -1,19 +1,36 @@
 """
 Endpoints de la API para gestionar el chat.
-
-REFACTORIZADO: Usa arquitectura hexagonal con ChatServiceV2
 """
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 import traceback
 from pydantic import BaseModel
 from sqlmodel import Session
 
 from src.adapters.db.database import get_session
-from src.adapters.dependencies import get_chat_service_dependency
-from src.application.services.chat_service_v2 import ChatServiceV2
+from src.adapters.db.repository import ChatRepository
+from src.adapters.agents.groq_client import GroqClient
+from src.application.services.chat_service import ChatService
+from src.adapters.agents.gemini_client import GeminiClient
 from src.adapters.agents.prompts import AgentMode
 
 router = APIRouter()
+
+# --- Inyección de Dependencias ---
+
+def get_groq_client() -> GroqClient:
+    """Dependency para obtener el cliente de Groq."""
+    return GroqClient(client=httpx.AsyncClient())
+
+
+def get_chat_service(
+    session: Session = Depends(get_session),
+    client: GroqClient = Depends(get_groq_client),
+) -> ChatService:
+    """Dependency para obtener el servicio de chat."""
+    repo = ChatRepository(session)
+    gemini = GeminiClient(client=httpx.AsyncClient())
+    return ChatService(repo, client, gemini)
 
 
 # --- Schemas de la API (Pydantic) ---
