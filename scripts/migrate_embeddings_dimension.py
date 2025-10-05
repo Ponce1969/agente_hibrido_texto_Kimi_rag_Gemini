@@ -5,6 +5,9 @@ Migra de 384 dimensiones (all-MiniLM-L6-v2) a 768 dimensiones (Gemini).
 
 IMPORTANTE: Este script eliminará los embeddings existentes porque
 no es posible convertir vectores de 384 a 768 dimensiones.
+
+NOTA: Como no hay datos importantes, simplemente borra la tabla
+y la recrea con la nueva dimensión. Luego deberás re-indexar tus PDFs.
 """
 
 from __future__ import annotations
