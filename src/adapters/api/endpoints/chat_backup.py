@@ -1,20 +1,36 @@
 """
 Endpoints de la API para gestionar el chat.
-
-MIGRADO: Usa ChatServiceV2 con arquitectura hexagonal
 """
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 import traceback
 from pydantic import BaseModel
 from sqlmodel import Session
 
 from src.adapters.db.database import get_session
-from src.adapters.dependencies import get_chat_service_dependency
-from src.application.services.chat_service_v2 import ChatServiceV2
+from src.adapters.db.repository import ChatRepository
+from src.adapters.agents.groq_client import GroqClient
+from src.application.services.chat_service import ChatService
+from src.adapters.agents.gemini_client import GeminiClient
 from src.adapters.agents.prompts import AgentMode
-from src.domain.models.chat_models import ChatSessionCreate
 
 router = APIRouter()
+
+# --- Inyección de Dependencias ---
+
+def get_groq_client() -> GroqClient:
+    """Dependency para obtener el cliente de Groq."""
+    return GroqClient(client=httpx.AsyncClient())
+
+
+def get_chat_service(
+    session: Session = Depends(get_session),
+    client: GroqClient = Depends(get_groq_client),
+) -> ChatService:
+    """Dependency para obtener el servicio de chat."""
+    repo = ChatRepository(session)
+    gemini = GeminiClient(client=httpx.AsyncClient())
+    return ChatService(repo, client, gemini)
 
 
 # --- Schemas de la API (Pydantic) ---
@@ -41,14 +57,14 @@ class NewSessionResponse(BaseModel):
 @router.post("/sessions", response_model=NewSessionResponse, status_code=201)
 def create_new_session(
     request: NewSessionRequest,
-    service: ChatServiceV2 = Depends(get_chat_service_dependency),
+    service: ChatService = Depends(get_chat_service),
 ):
     """Crea una nueva sesión de chat."""
     try:
-        session_data = ChatSessionCreate(user_id=request.user_id)
-        session = service.create_session(session_data)
-        return NewSessionResponse(session_id=int(session.id))
+        session = service.create_new_session(user_id=request.user_id)
+        return NewSessionResponse(session_id=session.id)
     except Exception as e:
+        # Devolver detalle para facilitar diagnóstico en desarrollo
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"create_new_session error: {e}\n{tb}")
 
@@ -56,16 +72,24 @@ def create_new_session(
 @router.post("/chat", response_model=ChatResponse)
 async def handle_chat(
     request: ChatRequest,
-    service: ChatServiceV2 = Depends(get_chat_service_dependency),
+    service: ChatService = Depends(get_chat_service),
 ):
     """Maneja un mensaje de chat y devuelve la respuesta de la IA."""
     try:
-        reply = await service.handle_message(
-            session_id=str(request.session_id),
+        reply = await service.handle_chat_message(
+            session_id=request.session_id,
             user_message=request.message,
-            agent_mode=request.mode.value,
+            agent_mode=request.mode,
+            file_id=request.file_id,
+            selected_section_ids=request.selected_section_ids,
+            use_gemini_fallback=request.use_gemini_fallback,
         )
         return ChatResponse(reply=reply)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Error en la API de IA: {e.response.text}",
+        )
     except Exception as e:
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"handle_chat error: {e}\n{tb}")

@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.embeddings_repository import EmbeddingsRepository
 from src.adapters.db.pg_engine import get_pg_engine
-from src.application.services.embeddings_service import EmbeddingsService
+from src.adapters.dependencies import get_embeddings_service
 
 router = APIRouter()
 
@@ -21,8 +21,8 @@ def embeddings_health():
         return {
             "configured": False,
             "message": "DATABASE_URL_PG no configurado",
-            "embedding_model": "all-MiniLM-L6-v2",
-            "embedding_dim": 384
+            "embedding_model": "Gemini text-embedding-004",
+            "embedding_dim": 768
         }
     
     try:
@@ -33,8 +33,8 @@ def embeddings_health():
         return {
             "configured": True,
             "connected": True,
-            "embedding_model": "all-MiniLM-L6-v2",
-            "embedding_dim": 384,
+            "embedding_model": "Gemini text-embedding-004",
+            "embedding_dim": 768,
             "total_chunks_indexed": total_chunks,
             "message": "Sistema de embeddings funcionando correctamente"
         }

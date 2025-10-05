@@ -12,7 +12,7 @@ from datetime import datetime, UTC
 from src.adapters.db.file_models import FileUpload, FileSection, FileStatus
 from src.adapters.db.database import engine
 from sqlmodel import Session as SQLSession
-from src.application.services.embeddings_service import EmbeddingsService
+from src.adapters.dependencies import get_embeddings_service
 from src.adapters.db.embeddings_repository import EmbeddingsRepository
 from src.adapters.db.pg_engine import get_pg_engine
 
@@ -263,8 +263,43 @@ def _process_and_index(file_id: int):
         # Evitar reindexación si ya existe
         if repo.count_chunks(file_id) > 0:
             return
-        svc = EmbeddingsService(repo)
-        svc.index_file(file_id)
+        
+        # Usar servicio nuevo con Gemini
+        import asyncio
+        svc = get_embeddings_service()
+        
+        # Obtener file y sections
+        with SQLSession(engine) as session:
+            from src.adapters.db.file_models import FileUpload, FileSection
+            fu = session.get(FileUpload, file_id)
+            if not fu:
+                return
+            sections = session.exec(select(FileSection).where(FileSection.file_id == file_id)).all()
+            
+            # Convertir a modelos de dominio
+            from src.domain.models.file_models import FileDocument, FileSection as DomainSection, FileStatus as DomainStatus
+            
+            file_doc = FileDocument(
+                id=str(fu.id),
+                filename=fu.filename,
+                file_path=fu.file_path,
+                status=DomainStatus.READY,
+                created_at=fu.created_at,
+            )
+            
+            domain_sections = [
+                DomainSection(
+                    id=s.id,
+                    file_id=str(s.file_id),
+                    text=s.text_content,
+                    page_number=s.page_number,
+                    chunk_index=0,
+                )
+                for s in sections
+            ]
+            
+            # Indexar con el nuevo servicio
+            asyncio.run(svc.index_document(file_doc, domain_sections))
     except Exception as e:
         # Registrar el error en FileUpload.error_message para visibilidad
         with SQLSession(engine) as session:
@@ -285,8 +320,43 @@ def _index_embeddings_bg(file_id: int):
         repo.ensure_schema()
         if repo.count_chunks(file_id) > 0:
             return
-        svc = EmbeddingsService(repo)
-        svc.index_file(file_id)
+        
+        # Usar servicio nuevo con Gemini
+        import asyncio
+        svc = get_embeddings_service()
+        
+        # Obtener file y sections
+        with SQLSession(engine) as session:
+            from src.adapters.db.file_models import FileUpload, FileSection
+            fu = session.get(FileUpload, file_id)
+            if not fu:
+                return
+            sections = session.exec(select(FileSection).where(FileSection.file_id == file_id)).all()
+            
+            # Convertir a modelos de dominio
+            from src.domain.models.file_models import FileDocument, FileSection as DomainSection, FileStatus as DomainStatus
+            
+            file_doc = FileDocument(
+                id=str(fu.id),
+                filename=fu.filename,
+                file_path=fu.file_path,
+                status=DomainStatus.READY,
+                created_at=fu.created_at,
+            )
+            
+            domain_sections = [
+                DomainSection(
+                    id=s.id,
+                    file_id=str(s.file_id),
+                    text=s.text_content,
+                    page_number=s.page_number,
+                    chunk_index=0,
+                )
+                for s in sections
+            ]
+            
+            # Indexar con el nuevo servicio
+            asyncio.run(svc.index_document(file_doc, domain_sections))
     except Exception as e:
         # Registrar el error para visibilidad
         with SQLSession(engine) as session:
