@@ -10,6 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 import httpx
+from fastapi import Depends
 from sqlmodel import Session
 
 from src.domain.ports import LLMPort, ChatRepositoryPort, EmbeddingsPort
@@ -112,7 +113,7 @@ def get_chat_service(session: Session) -> ChatServiceV2:
 # ============================================================================
 
 def get_chat_service_dependency(
-    session: Session = get_session(),  # type: ignore[misc]
+    session: Session = Depends(get_session),
 ) -> ChatServiceV2:
     """
     Dependencia de FastAPI para obtener el servicio de chat.
