@@ -22,6 +22,12 @@ class SessionService:
         """Obtiene la sesión actual o crea una nueva."""
         if "session_id" not in st.session_state or st.session_state.session_id == 0:
             session_id = self.backend.create_session()
+            
+            # Validar que la sesión se creó correctamente
+            if session_id == 0 or session_id is None:
+                st.error("⚠️ Error al crear sesión. Por favor recarga la página.")
+                return 0
+            
             st.session_state.session_id = session_id
             st.session_state.messages = []
         return st.session_state.session_id
@@ -38,14 +44,28 @@ class SessionService:
     def switch_to_session(self, session_id: int) -> None:
         """Cambia a una sesión específica."""
         st.session_state.session_id = session_id
-        self.load_session_messages(session_id)
+        messages = self.load_session_messages(session_id)
+        
+        # Feedback al usuario
+        if messages:
+            st.success(f"✅ Sesión {session_id} cargada con {len(messages)} mensajes")
+        else:
+            st.info(f"📭 Sesión {session_id} no tiene mensajes guardados")
+        
         st.rerun()
     
     def create_new_session(self) -> int:
         """Crea una nueva sesión y cambia a ella."""
         session_id = self.backend.create_session()
+        
+        # Validar que la sesión se creó correctamente
+        if session_id == 0 or session_id is None:
+            st.error("⚠️ Error al crear nueva sesión")
+            return 0
+        
         st.session_state.session_id = session_id
         st.session_state.messages = []
+        st.success(f"✅ Nueva sesión creada: {session_id}")
         return session_id
     
     def delete_session(self, session_id: int) -> bool:

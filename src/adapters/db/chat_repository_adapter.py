@@ -56,7 +56,7 @@ class SQLChatRepositoryAdapter(ChatRepositoryPort):
         """
         # Convertir de DTO de dominio a modelo de DB
         db_session = ChatSessionDB(
-            title=session_data.title,
+            session_name=session_data.title,  # El dominio usa 'title', DB usa 'session_name'
             user_id=session_data.user_id,
         )
         
@@ -262,20 +262,12 @@ class SQLChatRepositoryAdapter(ChatRepositoryPort):
     
     # Métodos privados de conversión
     
-    def _db_session_to_domain(self, db_session: ChatSessionDB) -> ChatSession:
+    def _db_session_to_domain(self, db_session) -> ChatSession:
         """Convierte modelo de DB a modelo de dominio."""
-        from src.domain.models import ChatSession
         from datetime import datetime, UTC
         
-        return ChatSession(
-            user_id=db_session.user_id,
-            session_name=getattr(db_session, 'title', None),
-            created_at=db_session.created_at or datetime.now(UTC),
-            updated_at=db_session.updated_at or datetime.now(UTC),
-            is_active=True,
-            metadata={},
-            messages=[],
-        )
+        # Retornar directamente el modelo de DB (ChatSession ya es el modelo correcto)
+        return db_session
     
     def _db_message_to_domain(self, db_message: ChatMessageDB) -> ChatMessage:
         """Convierte modelo de DB a modelo de dominio."""

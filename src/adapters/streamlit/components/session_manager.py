@@ -42,7 +42,15 @@ class SessionManager:
             sessions = self.session_service.get_session_list()
             
             if sessions:
-                for session in sessions:
+                # Filtrar sesiones inválidas (ID 0 son sesiones temporales/fallidas)
+                valid_sessions = [s for s in sessions if s.id > 0]
+                
+                if not valid_sessions:
+                    st.info("No hay sesiones guardadas disponibles.")
+                    return
+                
+                # Usar enumerate para keys únicas
+                for idx, session in enumerate(valid_sessions):
                     with st.expander(
                         f"Sesión {session.id} - {session.message_count} mensajes",
                         expanded=False
@@ -56,7 +64,7 @@ class SessionManager:
                         with col1:
                             if st.button(
                                 "🔄 Cargar sesión", 
-                                key=f"load_session_{session.id}",
+                                key=f"load_session_{session.id}_{idx}",  # Key única con índice
                                 use_container_width=True
                             ):
                                 self.session_service.switch_to_session(session.id)
@@ -64,7 +72,7 @@ class SessionManager:
                         with col2:
                             if st.button(
                                 "🗑️ Eliminar", 
-                                key=f"delete_session_{session.id}",
+                                key=f"delete_session_{session.id}_{idx}",  # Key única con índice
                                 use_container_width=True,
                                 type="secondary"
                             ):

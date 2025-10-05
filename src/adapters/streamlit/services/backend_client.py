@@ -47,11 +47,16 @@ class BackendClient:
         try:
             response = httpx.post(
                 f"{self.base_url}/sessions", 
-                json={"user_id": self.user_id}
+                json={"user_id": self.user_id},
+                timeout=10
             )
             response.raise_for_status()
-            return response.json()["id"]
-        except Exception:
+            data = response.json()
+            # Backend retorna {"session_id": X}, no {"id": X}
+            session_id = data.get("session_id", 0)
+            return session_id if session_id else 0
+        except Exception as e:
+            print(f"Error creando sesión: {e}")
             return 0
     
     def get_session_messages(self, session_id: int) -> List[ChatMessage]:
@@ -63,16 +68,18 @@ class BackendClient:
             )
             response.raise_for_status()
             data = response.json()
-            return [
+            messages = [
                 ChatMessage(
                     role=msg["role"],
                     content=msg["content"],
-                    message_index=msg["message_index"],
+                    message_index=msg.get("message_index", msg.get("index", 0)),  # Soporte para ambos campos
                     created_at=msg.get("created_at")
                 )
                 for msg in data
             ]
-        except Exception:
+            return messages
+        except Exception as e:
+            st.error(f"Error cargando mensajes de sesión {session_id}: {e}")
             return []
     
     @st.cache_data(show_spinner=False, ttl=10)
@@ -103,8 +110,10 @@ class BackendClient:
         """Elimina una sesión."""
         try:
             response = httpx.delete(f"{self.base_url}/sessions/{session_id}", timeout=10)
-            return response.status_code == 200
-        except Exception:
+            # Backend puede retornar 200 o 204 (No Content) al eliminar
+            return response.status_code in [200, 204]
+        except Exception as e:
+            st.error(f"Error eliminando sesión {session_id}: {e}")
             return False
     
     def send_chat_message(self, request: ChatRequest) -> ChatResponse:

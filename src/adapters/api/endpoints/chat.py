@@ -46,7 +46,7 @@ def create_new_session(
         from datetime import datetime, UTC
         session_data = ChatSessionCreate(
             user_id=request.user_id,
-            title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+            title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"  # El modelo de dominio usa 'title'
         )
         session = service.create_session(session_data)
         return NewSessionResponse(session_id=int(session.id))

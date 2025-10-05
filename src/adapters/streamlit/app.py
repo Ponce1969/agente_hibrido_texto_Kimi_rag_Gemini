@@ -60,8 +60,9 @@ def main():
         backend_client, session_service, file_service
     )
     
-    # Asegurar sesión activa
-    session_service.get_or_create_current_session()
+    # Inicializar session_id si no existe (sin crear sesión aún)
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = 0
     
     # Layout principal
     with st.sidebar:
