@@ -285,7 +285,7 @@ def _process_and_index(file_id: int):
                 id=str(fu.id),
                 filename=fu.filename,
                 file_path=fu.file_path,
-                status=DomainStatus.READY,
+                status=DomainStatus.INDEXED,
                 created_at=fu.created_at,
             )
             
@@ -344,7 +344,7 @@ def _index_embeddings_bg(file_id: int):
                 id=str(fu.id),
                 filename=fu.filename,
                 file_path=fu.file_path,
-                status=DomainStatus.READY,
+                status=DomainStatus.INDEXED,
                 created_at=fu.created_at,
             )
             

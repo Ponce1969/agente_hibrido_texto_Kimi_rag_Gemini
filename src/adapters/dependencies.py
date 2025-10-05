@@ -99,12 +99,14 @@ def get_chat_service(session: Session) -> ChatServiceV2:
     llm_client = get_groq_adapter()
     fallback_llm = get_gemini_adapter()
     repository = get_chat_repository(session)
+    embeddings_svc = get_embeddings_service()
     
     # Crear servicio con dependencias inyectadas
     return ChatServiceV2(
         llm_client=llm_client,
         repository=repository,
         fallback_llm=fallback_llm,
+        embeddings_service=embeddings_svc,
     )
 
 

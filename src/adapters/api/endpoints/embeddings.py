@@ -61,43 +61,118 @@ def embeddings_init():
 
 
 @router.post("/embeddings/index/{file_id}", tags=["Embeddings"], summary="Indexa (chunking + embeddings) un PDF ya procesado en secciones")
-def embeddings_index(file_id: int):
+async def embeddings_index(file_id: int):
     engine = get_pg_engine()
     if engine is None:
         raise HTTPException(status_code=400, detail="DATABASE_URL_PG no configurado")
     try:
-        repo = EmbeddingsRepository()
-        svc = EmbeddingsService(repo)
-        inserted = svc.index_file(file_id)
+        # Usar servicio NUEVO con Gemini embeddings (768 dims)
+        from sqlmodel import Session as SQLSession, select
+        from src.adapters.db.database import engine as sqlite_engine
+        from src.adapters.db.file_models import FileUpload, FileSection
+        from src.domain.models.file_models import FileDocument, FileSection as DomainSection, FileStatus as DomainStatus
+        
+        svc = get_embeddings_service()
+        
+        # 1. Obtener file desde SQLite
+        with SQLSession(sqlite_engine) as session:
+            fu = session.get(FileUpload, file_id)
+            if not fu:
+                raise HTTPException(status_code=404, detail="Archivo no encontrado")
+            
+            # 2. Extraer texto del PDF con PyPDF
+            try:
+                from pypdf import PdfReader
+                import io
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"PyPDF no disponible: {e}")
+            
+            with open(fu.path, "rb") as f:
+                raw = f.read()
+            reader = PdfReader(io.BytesIO(raw))
+            
+            if getattr(reader, "is_encrypted", False):
+                try:
+                    reader.decrypt("")
+                except Exception:
+                    raise HTTPException(status_code=400, detail="PDF cifrado y no pudo ser leído")
+            
+            # 3. Obtener secciones desde SQLite
+            sections = session.exec(select(FileSection).where(FileSection.file_id == file_id).order_by(FileSection.start_page)).all()
+            
+            if not sections:
+                raise HTTPException(status_code=400, detail="Archivo sin secciones procesadas")
+            
+            # 4. Extraer texto de cada sección y crear modelos de dominio
+            domain_sections = []
+            for sec in sections:
+                # Extraer texto de las páginas de esta sección
+                text_parts = []
+                for page_idx in range(sec.start_page, sec.end_page + 1):
+                    try:
+                        page_text = reader.pages[page_idx].extract_text() or ""
+                        text_parts.append(page_text)
+                    except Exception as e:
+                        print(f"⚠️ Error extrayendo página {page_idx}: {e}")
+                
+                section_text = "\n".join(text_parts).strip()
+                if section_text:
+                    domain_sections.append(
+                        DomainSection(
+                            id=sec.id,
+                            file_id=str(sec.file_id),
+                            text=section_text,
+                            page_number=sec.start_page,
+                            chunk_index=0,
+                        )
+                    )
+            
+            if not domain_sections:
+                raise HTTPException(status_code=400, detail="No se pudo extraer texto del PDF")
+            
+            # 5. Crear FileDocument
+            file_doc = FileDocument(
+                id=str(fu.id),
+                filename=fu.filename_original,
+                file_path=fu.path,
+                status=DomainStatus.INDEXED,
+                created_at=fu.created_at,
+            )
+        
+        # 6. Indexar con Gemini embeddings (768 dims)
+        inserted = await svc.index_document(file_doc, domain_sections)
         return {"status": "ok", "file_id": file_id, "inserted_chunks": inserted}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error indexando archivo: {e}")
+        import traceback
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"Error indexando archivo: {e}\n{tb}")
 
 
 @router.get("/embeddings/search", tags=["Embeddings"], summary="Búsqueda top-k por similitud en embeddings")
-def embeddings_search(q: str = Query(..., description="Consulta de texto"), file_id: int | None = Query(None), top_k: int = Query(5, ge=1, le=50)):
+async def embeddings_search(q: str = Query(..., description="Consulta de texto"), file_id: int | None = Query(None), top_k: int = Query(5, ge=1, le=50)):
     engine = get_pg_engine()
     if engine is None:
         raise HTTPException(status_code=400, detail="DATABASE_URL_PG no configurado")
     try:
-        repo = EmbeddingsRepository()
-        svc = EmbeddingsService(repo)
-        results = svc.search(q, file_id=file_id, top_k=top_k)
+        # Usar servicio nuevo con Gemini embeddings
+        svc = get_embeddings_service()
+        
+        # Buscar chunks similares
+        results = await svc.search_similar(
+            query=q,
+            file_id=str(file_id) if file_id else None,
+            top_k=top_k
+        )
+        
         return {
             "query": q,
             "file_id": file_id,
             "top_k": top_k,
-            "results": [
-                {
-                    "id": r.id,
-                    "file_id": r.file_id,
-                    "section_id": r.section_id,
-                    "chunk_index": r.chunk_index,
-                    "distance": r.distance,
-                    "content": r.content,
-                }
-                for r in results
-            ],
+            "results": results,  # EmbeddingsServiceV2 ya retorna dict
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en búsqueda: {e}")
+        import traceback
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"Error en búsqueda: {e}\n{tb}")

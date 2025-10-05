@@ -98,7 +98,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         response = await self.client.post(
             url,
             json=payload,
-            timeout=httpx.Timeout(connect=10.0, read=30.0),
+            timeout=httpx.Timeout(10.0, connect=10.0, read=30.0, write=10.0, pool=10.0),
         )
         response.raise_for_status()
         

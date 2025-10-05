@@ -6,9 +6,7 @@ MIGRADO: Usa ChatServiceV2 con arquitectura hexagonal
 from fastapi import APIRouter, Depends, HTTPException, Query
 import traceback
 from pydantic import BaseModel
-from sqlmodel import Session
 
-from src.adapters.db.database import get_session
 from src.adapters.dependencies import get_chat_service_dependency
 from src.application.services.chat_service_v2 import ChatServiceV2
 from src.adapters.agents.prompts import AgentMode
@@ -64,22 +62,20 @@ async def handle_chat(
 ):
     """Maneja un mensaje de chat y devuelve la respuesta de la IA."""
     try:
-        session_id = str(request.session_id)
+        # DEBUG: Log de request
+        print(f"🔍 [CHAT ENDPOINT] Request recibida:")
+        print(f"   session_id: {request.session_id}")
+        print(f"   message: {request.message[:100]}...")
+        print(f"   mode: {request.mode.value}")
+        print(f"   file_id: {request.file_id}")  # ✅ CRÍTICO
+        print(f"   use_gemini_fallback: {request.use_gemini_fallback}")
         
-        # Si session_id es "0" o la sesión no existe, crear una nueva
-        if session_id == "0" or not service.get_session(session_id):
-            from datetime import datetime, UTC
-            session_data = ChatSessionCreate(
-                user_id="streamlit_user",  # Usuario por defecto
-                title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
-            )
-            new_session = service.create_session(session_data)
-            session_id = str(new_session.id)
-        
+        # handle_message maneja automáticamente la creación de sesión si es necesario
         reply = await service.handle_message(
-            session_id=session_id,
+            session_id=str(request.session_id),
             user_message=request.message,
             agent_mode=request.mode.value,
+            file_id=request.file_id,  # ✅ Pasar file_id para RAG
         )
         return ChatResponse(reply=reply)
     except Exception as e:
@@ -150,10 +146,13 @@ def list_sessions(
 
 
 @router.delete("/sessions/{session_id}")
-def delete_session(session_id: int, session: Session = Depends(get_session)):
+def delete_session(
+    session_id: int,
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
+):
+    """Elimina una sesión de chat."""
     try:
-        repo = ChatRepository(session)
-        ok = repo.delete_session(session_id)
+        ok = service.repo.delete_session(str(session_id))
         if not ok:
             raise HTTPException(status_code=404, detail="Sesión no encontrada")
         return {"deleted": True}
