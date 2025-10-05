@@ -84,16 +84,19 @@ class ChatMessageDTO(BaseModel):
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageDTO])
 def get_session_messages_api(
     session_id: int,
-    session: Session = Depends(get_session),
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Devuelve los mensajes persistidos para una sesión de chat."""
     try:
-        repo = ChatRepository(session)
-        msgs = repo.get_session_messages(session_id)
+        session = service.get_session(str(session_id))
+        if not session:
+            raise HTTPException(status_code=404, detail="Sesión no encontrada")
         return [
             ChatMessageDTO(role=m.role.value, content=m.content, index=m.message_index)
-            for m in msgs
+            for m in session.messages
         ]
+    except HTTPException:
+        raise
     except Exception as e:
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"get_session_messages error: {e}\n{tb}")
@@ -111,23 +114,24 @@ class SessionSummaryDTO(BaseModel):
 def list_sessions(
     user_id: str = Query(..., description="Usuario dueño de las sesiones"),
     limit: int = Query(30, ge=1, le=200),
-    session: Session = Depends(get_session),
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     try:
-        repo = ChatRepository(session)
-        items = repo.get_user_sessions(user_id=user_id, limit=limit)
+        sessions = service.list_sessions(limit=limit)
         out: list[SessionSummaryDTO] = []
-        for s in items:
-            out.append(
-                SessionSummaryDTO(
-                    id=s.id,
-                    user_id=s.user_id,
-                    session_name=getattr(s, "session_name", None),
-                    created_at=s.created_at.isoformat() if getattr(s, "created_at", None) else None,
-                    updated_at=s.updated_at.isoformat() if getattr(s, "updated_at", None) else None,
+        for s in sessions:
+            # Filtrar por user_id si es necesario
+            if s.user_id == user_id:
+                out.append(
+                    SessionSummaryDTO(
+                        id=int(s.id),
+                        user_id=s.user_id,
+                        session_name=s.title,
+                        created_at=s.created_at.isoformat() if s.created_at else None,
+                        updated_at=s.updated_at.isoformat() if s.updated_at else None,
+                    )
                 )
-            )
-        return out
+        return out[:limit]
     except Exception as e:
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"list_sessions error: {e}\n{tb}")
