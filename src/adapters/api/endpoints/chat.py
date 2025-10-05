@@ -126,7 +126,7 @@ def list_sessions(
                     SessionSummaryDTO(
                         id=int(s.id),
                         user_id=s.user_id,
-                        session_name=s.title,
+                        session_name=s.session_name if hasattr(s, 'session_name') else None,
                         created_at=s.created_at.isoformat() if s.created_at else None,
                         updated_at=s.updated_at.isoformat() if s.updated_at else None,
                     )
