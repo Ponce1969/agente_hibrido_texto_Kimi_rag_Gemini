@@ -249,6 +249,8 @@ def _process_and_index(file_id: int):
     """Orquestador: procesa el PDF en secciones y luego indexa embeddings en pgvector.
     Idempotente: si ya existen embeddings para el file_id, no reindexa.
     """
+    from src.adapters.db.file_models import FileUpload, FileSection
+    
     # Primero, crear secciones (actualiza FileUpload.status y páginas procesadas)
     _process_pdf_into_sections(file_id)
 
@@ -315,6 +317,8 @@ def _index_embeddings_bg(file_id: int):
     """Solo ejecuta indexación de embeddings en background para un file_id ya READY.
     Idempotente: si ya existen chunks, no hace nada.
     """
+    from src.adapters.db.file_models import FileUpload, FileSection
+    
     try:
         repo = EmbeddingsRepository()
         repo.ensure_schema()
