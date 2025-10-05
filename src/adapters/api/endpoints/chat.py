@@ -64,8 +64,20 @@ async def handle_chat(
 ):
     """Maneja un mensaje de chat y devuelve la respuesta de la IA."""
     try:
+        session_id = str(request.session_id)
+        
+        # Si session_id es "0" o la sesión no existe, crear una nueva
+        if session_id == "0" or not service.get_session(session_id):
+            from datetime import datetime, UTC
+            session_data = ChatSessionCreate(
+                user_id="streamlit_user",  # Usuario por defecto
+                title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+            )
+            new_session = service.create_session(session_data)
+            session_id = str(new_session.id)
+        
         reply = await service.handle_message(
-            session_id=str(request.session_id),
+            session_id=session_id,
             user_message=request.message,
             agent_mode=request.mode.value,
         )
