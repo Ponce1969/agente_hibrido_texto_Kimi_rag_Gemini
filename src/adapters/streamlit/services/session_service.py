@@ -77,5 +77,13 @@ class SessionService:
         return success
     
     def get_session_list(self, limit: int = 30) -> List[ChatSession]:
-        """Obtiene la lista de sesiones del usuario."""
+        """Obtiene la lista de sesiones con mensajes."""
         return self.backend.list_sessions(limit=limit)
+    
+    def clean_empty_sessions(self) -> int:
+        """Limpia las sesiones vacías del usuario."""
+        return self.backend.delete_empty_sessions()
+    
+    def get_session_message_count(self, session_id: int) -> int:
+        """Obtiene el número de mensajes de una sesión."""
+        return self.backend.count_session_messages(str(session_id))

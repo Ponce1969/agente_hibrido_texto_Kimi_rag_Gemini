@@ -1,0 +1,10 @@
+BACKUP DE CÓDIGO OBSOLETO
+========================================
+Fecha: 2025-10-06 22:41:58.138526
+
+✅ src/application/services/chat_service.py
+✅ src/application/services/embeddings_service.py
+✅ src/adapters/agents/groq_client.py
+✅ src/adapters/agents/gemini_client.py
+✅ src/adapters/api/endpoints/chat_backup.py
+✅ src/adapters/streamlit/app_backup_original.py

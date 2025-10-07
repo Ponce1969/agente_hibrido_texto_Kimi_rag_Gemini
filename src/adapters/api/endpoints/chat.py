@@ -8,7 +8,7 @@ import traceback
 from pydantic import BaseModel
 
 from src.adapters.dependencies import get_chat_service_dependency
-from src.application.services.chat_service_v2 import ChatServiceV2
+from src.application.services.chat_service import ChatServiceV2
 from src.adapters.agents.prompts import AgentMode
 from src.domain.models.chat_models import ChatSessionCreate
 
@@ -114,6 +114,7 @@ class SessionSummaryDTO(BaseModel):
     id: int
     user_id: str
     session_name: str | None = None
+    message_count: int = 0
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -130,11 +131,15 @@ def list_sessions(
         for s in sessions:
             # Filtrar por user_id si es necesario
             if s.user_id == user_id:
+                # Contar mensajes dinámicamente
+                msg_count = service.repo.count_session_messages(str(s.id))
+                
                 out.append(
                     SessionSummaryDTO(
                         id=int(s.id),
                         user_id=s.user_id,
                         session_name=s.session_name if hasattr(s, 'session_name') else None,
+                        message_count=msg_count,
                         created_at=s.created_at.isoformat() if s.created_at else None,
                         updated_at=s.updated_at.isoformat() if s.updated_at else None,
                     )

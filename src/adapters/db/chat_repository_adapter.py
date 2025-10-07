@@ -95,29 +95,92 @@ class SQLChatRepositoryAdapter(ChatRepositoryPort):
         offset: int = 0,
     ) -> list[ChatSession]:
         """
-        Lista las sesiones de chat.
+        Lista solo las sesiones que tienen mensajes.
+        
+        Filtra automáticamente las sesiones sin mensajes para
+        mantener la interfaz limpia y ordenada.
         
         Args:
             limit: Número máximo de sesiones
             offset: Número de sesiones a saltar
             
         Returns:
-            Lista de sesiones
+            Lista de sesiones con al menos 1 mensaje
         """
+        # Subquery para contar mensajes por sesión
+        message_count = (
+            select(func.count(ChatMessageDB.id))
+            .where(ChatMessageDB.session_id == ChatSessionDB.id)
+            .scalar_subquery()
+        )
+        
         statement = (
             select(ChatSessionDB)
-            .order_by(ChatSessionDB.updated_at.desc())  # type: ignore[attr-defined]
+            .where(message_count > 0)  # Solo sesiones con mensajes
+            .order_by(ChatSessionDB.updated_at.desc())  # type: ignore[arg-defined]
             .limit(limit)
             .offset(offset)
         )
-        db_sessions = self.session.exec(statement).all()
         
+        db_sessions = self.session.exec(statement).all()
         return [self._db_session_to_domain(s) for s in db_sessions]
+    
+    def count_session_messages(self, session_id: str) -> int:
+        """
+        Cuenta los mensajes de una sesión.
+        
+        Args:
+            session_id: ID de la sesión
+            
+        Returns:
+            Número de mensajes
+        """
+        statement = (
+            select(func.count())
+            .select_from(ChatMessageDB)
+            .where(ChatMessageDB.session_id == int(session_id))
+        )
+        count = self.session.exec(statement).first()
+        return count or 0
+    
+    def delete_empty_sessions(self) -> int:
+        """
+        Elimina todas las sesiones que no tienen mensajes.
+        
+        Returns:
+            Número de sesiones eliminadas
+        """
+        # Subquery para encontrar sesiones sin mensajes
+        message_count = (
+            select(func.count(ChatMessageDB.id))
+            .where(ChatMessageDB.session_id == ChatSessionDB.id)
+            .scalar_subquery()
+        )
+        
+        # Seleccionar sesiones vacías
+        empty_sessions = (
+            select(ChatSessionDB.id)
+            .where(message_count == 0)
+        )
+        
+        # Eliminar sesiones vacías
+        statement = (
+            select(ChatSessionDB)
+            .where(ChatSessionDB.id.in_(empty_sessions))
+        )
+        
+        empty_sessions_to_delete = self.session.exec(statement).all()
+        count = len(empty_sessions_to_delete)
+        
+        for session in empty_sessions_to_delete:
+            self.session.delete(session)
+        
+        self.session.commit()
+        return count
     
     def update_session(
         self,
         session_id: str,
-        *,
         title: str | None = None,
     ) -> ChatSession:
         """

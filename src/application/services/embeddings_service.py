@@ -1,199 +1,183 @@
 """
-EmbeddingsService: handles chunking and embedding generation for PDFs, storing into PostgreSQL (pgvector).
+Servicio de embeddings refactorizado con arquitectura hexagonal.
 
-Step 2 of RAG plan: service and indexation endpoint.
+Este servicio usa SOLO el puerto EmbeddingsPort, sin dependencias
+de implementaciones concretas.
+
+Tipado estricto para mypy --strict con Python 3.12+
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any
 
-from sqlmodel import Session, select
-from datetime import datetime
-
-from src.adapters.db.embeddings_repository import EmbeddingsRepository, EMBEDDING_DIM
-from src.adapters.config.settings import settings
-from src.adapters.db.embeddings_models import EmbeddingChunk
-from src.adapters.db.database import engine as sqlite_engine
-from src.adapters.db.file_models import FileUpload, FileSection, FileStatus
+if TYPE_CHECKING:
+    from src.domain.ports import EmbeddingsPort
+    from src.domain.models.file_models import FileDocument, FileSection
 
 
-# Choose a smaller model for low-resource PCs (AMD APU A10, 16GB RAM)
-# all-MiniLM-L6-v2: 384 dims, ~90MB, much faster and less RAM usage
-# all-mpnet-base-v2: 768 dims, ~420MB, better quality but more resources
-EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"  # 384 dims, optimized for low resources
-
-
-def _chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
-    if chunk_size <= 0:
-        return [text]
-    chunks: List[str] = []
-    start = 0
-    n = len(text)
-    while start < n:
-        end = min(n, start + chunk_size)
-        chunks.append(text[start:end])
-        if end == n:
-            break
-        start = max(end - overlap, 0)
-    return chunks
-
-
-class EmbeddingsService:
-    def __init__(self, repo: EmbeddingsRepository) -> None:
-        self.repo = repo
-        self.model = None  # Lazy loading for memory optimization
+class EmbeddingsServiceV2:
+    """
+    Servicio de aplicación para embeddings siguiendo arquitectura hexagonal.
+    
+    Este servicio orquesta la indexación de documentos sin conocer
+    detalles de implementación (Gemini API, sentence-transformers, etc.).
+    
+    Principios:
+    - Depende SOLO del puerto EmbeddingsPort
+    - No importa de adapters
+    - Lógica de negocio pura
+    - Fácil de testear con mocks
+    """
+    
+    def __init__(self, embeddings_client: EmbeddingsPort) -> None:
+        """
+        Inicializa el servicio de embeddings.
         
-    def _get_model(self):
-        """Lazy load the model to save memory when not in use."""
-        if self.model is None:
-            # Lazy import to avoid heavy import times when unused
-            from sentence_transformers import SentenceTransformer  # type: ignore
-            import torch
-            
-            print(f"[Embeddings] Cargando modelo {EMBEDDING_MODEL_NAME} (optimizado para bajos recursos)...")
-            self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-            
-            # Force CPU usage for consistency on AMD APU
-            if hasattr(self.model, 'device'):
-                self.model = self.model.to('cpu')
-                
-        return self.model
-
-    def _embed_texts(self, texts: Sequence[str]) -> List[Sequence[float]]:
-        # The model returns numpy arrays; convert to python lists of floats
-        model = self._get_model()
-        
-        # Use smaller batch size for low-resource systems
-        batch_size = max(1, int(getattr(settings, "embedding_batch_size", 2)))
-        print(f"[Embeddings] Procesando {len(texts)} textos con batch_size={batch_size}")
-        
-        vectors = model.encode(
-            list(texts),
-            normalize_embeddings=True,
-            batch_size=batch_size,
-            show_progress_bar=True,  # Show progress for user feedback
-            device='cpu',  # Force CPU for AMD APU compatibility
-        )
-        # Ensure each vector length matches EMBEDDING_DIM
-        out: List[Sequence[float]] = []
-        for v in vectors:
-            if len(v) != EMBEDDING_DIM:
-                raise ValueError(f"Embedding dimension mismatch: got {len(v)} expected {EMBEDDING_DIM}")
-            out.append([float(x) for x in v])
-        return out
-
-    def embed_query(self, query: str) -> Sequence[float]:
-        vecs = self._embed_texts([query])
-        return vecs[0]
-
-    def index_file(
+        Args:
+            embeddings_client: Cliente de embeddings (ej: GeminiEmbeddingsAdapter)
+        """
+        self.embeddings = embeddings_client
+    
+    async def index_document(
         self,
-        file_id: int,
-        section_ids: Optional[List[int]] = None,
-        chunk_size: int = settings.embedding_chunk_size,
-        overlap: int = settings.embedding_chunk_overlap,
+        file: FileDocument,
+        sections: list[FileSection],
+        *,
+        batch_size: int = 32,
     ) -> int:
         """
-        Build embeddings for a PDF previously processed into sections, storing results in PostgreSQL.
-        Returns number of chunks inserted.
+        Indexa un documento completo generando embeddings.
+        
+        Args:
+            file: Documento a indexar
+            sections: Secciones del documento
+            batch_size: Tamaño del batch para procesamiento
+            
+        Returns:
+            Número de secciones indexadas
+            
+        Raises:
+            ValueError: Si no hay secciones para indexar
         """
-        # Read file and sections from SQLite
-        with Session(sqlite_engine) as s:
-            fu = s.get(FileUpload, file_id)
-            if not fu:
-                raise ValueError("Archivo no encontrado")
-            if fu.status != FileStatus.READY:
-                raise ValueError("El archivo aún no está listo para indexación")
+        # Guard clause: validar entrada
+        if not sections:
+            raise ValueError("No hay secciones para indexar")
+        
+        # Delegar al cliente de embeddings
+        indexed_count = await self.embeddings.index_document(
+            file=file,
+            sections=sections,
+            batch_size=batch_size,
+        )
+        
+        return indexed_count
+    
+    async def search_similar(
+        self,
+        query: str,
+        file_id: str,
+        *,
+        top_k: int = 5,
+        min_similarity: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """
+        Busca secciones similares a una query.
+        
+        Args:
+            query: Texto de búsqueda
+            file_id: ID del archivo donde buscar
+            top_k: Número máximo de resultados
+            min_similarity: Similitud mínima requerida
+            
+        Returns:
+            Lista de resultados con texto y similitud
+        """
+        # Guard clause: validar query
+        if not query.strip():
+            raise ValueError("La query no puede estar vacía")
+        
+        # Generar embedding de la query
+        query_embedding = await self.embeddings.generate_embedding(query)
+        
+        # Buscar secciones similares
+        results = await self.embeddings.search_similar(
+            query_embedding=query_embedding,
+            file_id=file_id,
+            top_k=top_k,
+            min_similarity=min_similarity,
+        )
+        
+        # Convertir a diccionarios para la API
+        return [
+            {
+                "text": result.text,
+                "similarity": result.similarity,
+                "section_id": result.section.id,
+                "chunk_index": result.section.chunk_index,
+            }
+            for result in results
+        ]
+    
+    async def delete_document_embeddings(self, file_id: str) -> int:
+        """
+        Elimina todos los embeddings de un documento.
+        
+        Args:
+            file_id: ID del archivo
+            
+        Returns:
+            Número de embeddings eliminados
+        """
+        return await self.embeddings.delete_document_embeddings(file_id)
+    
+    def get_embedding_dimension(self) -> int:
+        """
+        Obtiene la dimensión de los embeddings.
+        
+        Returns:
+            Dimensión del vector (ej: 768 para Gemini)
+        """
+        return self.embeddings.get_embedding_dimension()
 
-            stmt = select(FileSection).where(FileSection.file_id == file_id).order_by(FileSection.start_page)
-            all_sections = s.exec(stmt).all()
 
-        if section_ids:
-            sections = [sec for sec in all_sections if sec.id in set(section_ids)]
-        else:
-            sections = all_sections
-
-        # Extract text per section using PyPDF (on-demand, similar to files endpoint)
-        try:
-            from pypdf import PdfReader  # type: ignore
-            import io
-        except Exception as e:
-            raise RuntimeError(f"Soporte PDF no disponible: {e}")
-
-        with open(fu.path, "rb") as f:
-            raw = f.read()
-        reader = PdfReader(io.BytesIO(raw))
-        if getattr(reader, "is_encrypted", False):
-            try:
-                reader.decrypt("")
-            except Exception:
-                raise RuntimeError("El PDF está cifrado y no pudo ser leído.")
-
-        # Delete previous chunks for this file_id to keep index consistent
-        self.repo.ensure_schema()
-        self.repo.delete_file_chunks(file_id)
-
-        total_inserted = 0
-        for sec_idx, sec in enumerate(sections, 1):
-            try:
-                print(f"[Embeddings] Procesando sección {sec_idx}/{len(sections)} (id={sec.id}) páginas {sec.start_page+1}-{sec.end_page+1}…")
-                parts: List[str] = []
-                for idx in range(sec.start_page, sec.end_page + 1):
-                    try:
-                        text = reader.pages[idx].extract_text() or ""
-                    except Exception as e:
-                        print(f"[Embeddings] Error extrayendo página {idx+1}: {e}")
-                        text = ""
-                    parts.append(text)
-                
-                section_text = "\n".join(parts).strip()
-                if not section_text:
-                    print(f"[Embeddings] Sección id={sec.id} sin texto extraíble, se omite.")
-                    continue
-
-                # Validar tamaño del texto antes de procesar
-                if len(section_text) < 50:  # Muy poco texto
-                    print(f"[Embeddings] Sección id={sec.id} tiene muy poco texto ({len(section_text)} chars), se omite.")
-                    continue
-
-                chunk_texts = _chunk_text(section_text, chunk_size=chunk_size, overlap=overlap)
-                print(f"[Embeddings] Sección id={sec.id}: {len(chunk_texts)} chunks para embedir (total chars: {len(section_text)})…")
-                
-                # Procesar embeddings con manejo de errores
-                try:
-                    embeddings = self._embed_texts(chunk_texts)
-                except Exception as e:
-                    print(f"[Embeddings] ERROR generando embeddings para sección {sec.id}: {e}")
-                    continue
-
-                chunks: List[EmbeddingChunk] = []
-                for i, (t, vec) in enumerate(zip(chunk_texts, embeddings)):
-                    chunks.append(
-                        EmbeddingChunk(
-                            file_id=file_id,
-                            section_id=sec.id,
-                            chunk_index=i,
-                            content=t,
-                            embedding=vec,
-                        )
-                    )
-                
-                # Insertar chunks con manejo de errores
-                try:
-                    inserted = self.repo.insert_chunks(chunks)
-                    total_inserted += inserted
-                    print(f"[Embeddings] Sección id={sec.id}: insertados {inserted} chunks (acumulado={total_inserted}).")
-                except Exception as e:
-                    print(f"[Embeddings] ERROR insertando chunks para sección {sec.id}: {e}")
-                    continue
-                    
-            except Exception as e:
-                print(f"[Embeddings] ERROR procesando sección {sec.id}: {e}")
-                continue
-
-        return total_inserted
-
-    def search(self, query: str, file_id: Optional[int] = None, top_k: int = 5):
-        qvec = self.embed_query(query)
-        return self.repo.search_top_k(qvec, file_id=file_id, top_k=top_k)
+def chunk_text(
+    text: str,
+    *,
+    chunk_size: int = 600,
+    overlap: int = 100,
+) -> list[str]:
+    """
+    Divide un texto en chunks con overlap.
+    
+    Args:
+        text: Texto a dividir
+        chunk_size: Tamaño máximo de cada chunk
+        overlap: Solapamiento entre chunks
+        
+    Returns:
+        Lista de chunks de texto
+    """
+    # Guard clause: validar entrada
+    if not text.strip():
+        return []
+    
+    if chunk_size <= 0:
+        return [text]
+    
+    chunks: list[str] = []
+    start = 0
+    text_length = len(text)
+    
+    while start < text_length:
+        end = min(text_length, start + chunk_size)
+        chunks.append(text[start:end])
+        
+        # Si llegamos al final, terminar
+        if end == text_length:
+            break
+        
+        # Mover start considerando el overlap
+        start = max(end - overlap, 0)
+    
+    return chunks

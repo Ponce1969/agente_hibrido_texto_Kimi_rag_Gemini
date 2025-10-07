@@ -18,8 +18,8 @@ from src.adapters.agents.groq_adapter import GroqAdapter
 from src.adapters.agents.gemini_adapter import GeminiAdapter
 from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapter
 from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
-from src.application.services.chat_service_v2 import ChatServiceV2
-from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
+from src.application.services.chat_service import ChatServiceV2
+from src.application.services.embeddings_service import EmbeddingsServiceV2
 from src.adapters.db.database import get_session
 
 
