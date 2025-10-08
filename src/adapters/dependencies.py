@@ -14,6 +14,7 @@ from fastapi import Depends
 from sqlmodel import Session
 
 from src.domain.ports import LLMPort, ChatRepositoryPort, EmbeddingsPort
+from src.domain.ports.python_search_port import PythonSearchPort
 from src.adapters.agents.groq_adapter import GroqAdapter
 from src.adapters.agents.gemini_adapter import GeminiAdapter
 from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapter
@@ -21,6 +22,7 @@ from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
 from src.application.services.chat_service import ChatServiceV2
 from src.application.services.embeddings_service import EmbeddingsServiceV2
 from src.adapters.db.database import get_session
+from src.adapters.tools.bear_python_tool import BearPythonTool
 
 
 # ============================================================================
@@ -100,6 +102,7 @@ def get_chat_service(session: Session) -> ChatServiceV2:
     fallback_llm = get_gemini_adapter()
     repository = get_chat_repository(session)
     embeddings_svc = get_embeddings_service()
+    python_search = get_python_search_tool()
     
     # Crear servicio con dependencias inyectadas
     return ChatServiceV2(
@@ -107,6 +110,7 @@ def get_chat_service(session: Session) -> ChatServiceV2:
         repository=repository,
         fallback_llm=fallback_llm,
         embeddings_service=embeddings_svc,
+        python_search=python_search,
     )
 
 
@@ -136,6 +140,25 @@ def get_chat_service_dependency(
         Servicio de chat configurado
     """
     return get_chat_service(session)
+
+
+# ============================================================================
+# Adaptador de Búsqueda Python
+# ============================================================================
+
+@lru_cache()
+def get_python_search_tool() -> PythonSearchPort:
+    """
+    Crea la herramienta de búsqueda Python con Bear API.
+    
+    Returns:
+        Herramienta de búsqueda Python configurada
+    """
+    from src.adapters.config.settings import settings
+    return BearPythonTool(
+        api_key=settings.bear_api_key,
+        base_url=settings.bear_base_url
+    )
 
 
 # ============================================================================

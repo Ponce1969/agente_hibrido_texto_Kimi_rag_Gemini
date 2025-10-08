@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # --- API Keys y Secretos ---
     groq_api_key: str = Field(..., description="API key para Groq.")
     gemini_api_key: str | None = Field(None, description="API key para Gemini (Google AI Studio)")
+    bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
     
     # --- Modelo LLM ---
     groq_model_name: str = Field(
@@ -105,6 +106,25 @@ class Settings(BaseSettings):
     embedding_chunk_overlap: int = Field(
         100,
         description="Solapamiento entre chunks de texto (caracteres) - reducido para bajos recursos",
+    )
+
+    # --- Búsqueda Python (Bear API) ---
+    bear_base_url: str = Field(
+        "https://api.github.com/search/repositories",
+        description="URL base de la API de GitHub para búsquedas (alternativa a Bear)",
+    )
+    bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
+    bear_search_enabled: bool = Field(
+        True,
+        description="Habilitar/deshabilitar búsqueda con Bear API",
+    )
+    bear_cache_ttl: int = Field(
+        3600,
+        description="Tiempo de vida del caché en segundos (1 hora por defecto)",
+    )
+    max_search_results: int = Field(
+        5,
+        description="Máximo de resultados de búsqueda a incluir en el contexto",
     )
 
 

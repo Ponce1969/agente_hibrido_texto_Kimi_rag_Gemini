@@ -10,9 +10,11 @@ Tipado estricto para mypy --strict con Python 3.12+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import re
 
 if TYPE_CHECKING:
     from src.domain.ports import LLMPort, ChatRepositoryPort, EmbeddingsPort
+    from src.domain.ports.python_search_port import PythonSearchPort, PythonSource
     from src.domain.models import ChatSession, ChatMessage, ChatSessionCreate, ChatMessageCreate
     from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
 
@@ -38,6 +40,7 @@ class ChatServiceV2:
         *,
         fallback_llm: LLMPort | None = None,
         embeddings_service: EmbeddingsServiceV2 | None = None,
+        python_search: PythonSearchPort | None = None,
     ) -> None:
         """
         Inicializa el servicio de chat.
@@ -52,6 +55,10 @@ class ChatServiceV2:
         self.repo = repository
         self.fallback_llm = fallback_llm
         self.embeddings = embeddings_service
+        self.python_search = python_search
+        
+        # Almacenar últimas fuentes usadas para feedback
+        self.last_search_sources: list[PythonSource] = []
     
     def create_session(self, session_data: ChatSessionCreate) -> ChatSession:
         """
@@ -99,6 +106,7 @@ class ChatServiceV2:
         max_tokens: int | None = None,
         temperature: float | None = None,
         use_fallback_on_error: bool = True,
+        use_internet: bool = True,
     ) -> str:
         """
         Maneja un mensaje del usuario y retorna la respuesta del LLM.
@@ -214,53 +222,52 @@ class ChatServiceV2:
             )
             print(f"🎯 System prompt RAG: {len(system_prompt)} caracteres")
         
-        # 6. Obtener respuesta del LLM
-        # IMPORTANTE: Sistema híbrido
-        # - RAG (con file_id) → Gemini 2.5 (fallback_llm)
-        # - Chat normal → Kimi-K2 (llm)
+        # 6. Obtener respuesta inicial del LLM
+        initial_response, tokens = await self._get_llm_response(
+            system_prompt=system_prompt,
+            history=history,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            session_id=session_id,
+            agent_mode=agent_mode,
+            use_fallback_on_error=use_fallback_on_error,
+            has_rag=bool(rag_context),
+        )
         
-        if rag_context and self.fallback_llm:
-            # RAG: Usar Gemini (mejor para contextos largos)
-            print(f"🤖 Usando Gemini 2.5 para RAG")
-            
-            try:
-                response, tokens = await self.fallback_llm.get_chat_completion(
-                    system_prompt=system_prompt,
-                    messages=history,
-                    max_tokens=max_tokens or 2048,  # Más tokens para RAG
-                    temperature=temperature or 0.3,
-                )
-            except Exception as e:
-                print(f"❌ Error en Gemini: {e}")
-                raise
-        else:
-            # Chat normal: Usar Kimi-K2 (más rápido)
-            print(f"🤖 Usando Kimi-K2 para chat normal")
-            
-            try:
-                response, tokens = await self.llm.get_chat_completion(
-                    system_prompt=system_prompt,
-                    messages=history,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    session_id=session_id,
-                    agent_mode=agent_mode,
-                    use_cache=True,  # Caché solo para chat normal
-                )
-            except Exception as e:
-                # Fallback a Gemini si Kimi falla
-                if use_fallback_on_error and self.fallback_llm:
-                    print(f"⚠️ Kimi-K2 falló, usando Gemini como fallback")
-                    response, tokens = await self.fallback_llm.get_chat_completion(
-                        system_prompt=system_prompt,
-                        messages=history,
+        # 7. Verificar si necesita búsqueda en Internet
+        if use_internet and self.python_search and not rag_context:
+            if self._should_search_internet(user_message, initial_response):
+                sources = await self._search_python_sources(user_message)
+                if sources:
+                    self.last_search_sources = sources
+                    context = self._build_internet_context(sources)
+                    
+                    # Re-llamar al LLM con contexto adicional
+                    enriched_prompt = (
+                        f"{system_prompt}\n\n"
+                        f"🔍 Información adicional de fuentes Python confiables:\n"
+                        f"{context}\n\n"
+                        f"Usa esta información para proporcionar una respuesta más precisa y actualizada."
+                    )
+                    
+                    response, tokens = await self._get_llm_response(
+                        system_prompt=enriched_prompt,
+                        history=history,
                         max_tokens=max_tokens,
                         temperature=temperature,
+                        session_id=session_id,
+                        agent_mode=agent_mode,
+                        use_fallback_on_error=use_fallback_on_error,
+                        has_rag=bool(rag_context),
                     )
                 else:
-                    raise
+                    response = initial_response
+            else:
+                response = initial_response
+        else:
+            response = initial_response
         
-        # 6. Guardar respuesta del asistente
+        # 8. Guardar respuesta del asistente
         assistant_msg_data = ChatMessageCreate(
             session_id=session_id,
             role=MessageRole.ASSISTANT,
@@ -315,3 +322,156 @@ class ChatServiceV2:
         }
         
         return prompts.get(agent_mode, prompts["architect"])
+    
+    def _should_search_internet(self, user_message: str, kimi_response: str) -> bool:
+        """Detecta si Kimi no pudo resolver el problema y necesita búsqueda."""
+        # Señales AMPLIADAS de que Kimi no tiene la información
+        uncertainty_signals = [
+            r"\bno (tengo|cuento con|puedo proporcionar)\b",
+            r"\b(desconozco|ignoro|no estoy seguro)\b",
+            r"\bno puedo\b",
+            r"\bno tengo\b",
+            r"\bno dispongo\b",
+            r"\bpodrías consultar\b",
+            r"\bpodrías buscar\b",
+            r"\berror.*desconocido\b",
+            r"\bno encuentro\b",
+            r"\bno tengo acceso\b",
+            r"\bno puedo ver\b",
+            r"\bno disponible\b",
+            r"\bcomo modelo de lenguaje\b",  # ¡CLAVE! Detecta cuando dice "como modelo"
+            r"\bno tengo la capacidad\b",
+            r"\bno puedo navegar\b",
+            r"\bno puedo acceder\b",
+        ]
+        
+        kimis_uncertain = any(
+            re.search(pattern, kimi_response, re.IGNORECASE) 
+            for pattern in uncertainty_signals
+        )
+
+        # Si el usuario menciona GitHub, búsqueda o internet
+        search_mentioned = bool(
+            re.search(r"\b(github|buscar|internet|repo|repositorio)\b", user_message, re.IGNORECASE)
+        )
+
+        # Si el usuario menciona un traceback o error específico
+        traceback_mentioned = bool(
+            re.search(r"Traceback|Error|Exception", user_message, re.IGNORECASE)
+        )
+        
+        # Si menciona arquitectura hexagonal o patrones específicos
+        architecture_mentioned = bool(
+            re.search(r"\b(arquitectura hexagonal|clean architecture|ports and adapters)\b", user_message, re.IGNORECASE)
+        )
+        
+        # Si pregunta por una API específica
+        api_question = bool(
+            re.search(r"\b(cómo usar|cómo funciona|ejemplo de|ejemplos de)\b.*\w+", user_message, re.IGNORECASE)
+        )
+
+        # Activar siempre que NO sea una consulta general rechazada
+        is_general_query = bool(
+            re.search(r"\b(clima|temperatura|hora|dólar|euro|noticias|recetas)\b", user_message, re.IGNORECASE)
+        )
+        
+        # Activar para preguntas sobre versiones, novedades y actualizaciones
+        version_question = bool(
+            re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE)
+        )
+
+        return (kimis_uncertain or search_mentioned or traceback_mentioned or 
+                architecture_mentioned or api_question or version_question) and not is_general_query
+
+    async def _search_python_sources(self, user_message: str) -> list[PythonSource]:
+        """Ejecuta búsqueda Bear para cualquier pregunta Python válida."""
+        if not self.python_search:
+            return []
+            
+        # Determinar tipo de búsqueda basado en el contenido
+        search_type = "general"
+        
+        if "Traceback" in user_message:
+            search_type = "bug"
+            return await self.python_search.search_python_bug(user_message)
+        elif re.search(r"\b(cómo usar|ejemplo|funciona)\b.*\w+\.\w+", user_message, re.IGNORECASE):
+            api_match = re.search(r"(\w+)\.(\w+)", user_message)
+            if api_match:
+                module, attr = api_match.groups()
+                return await self.python_search.search_python_api(module, attr)
+        elif re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE):
+            search_type = "version"
+            return await self.python_search.search_python_best_practice("latest python version release")
+        
+        # Default: búsqueda general para cualquier pregunta Python válida
+        return await self.python_search.search_python_best_practice(user_message)
+
+    def _build_internet_context(self, sources: list[PythonSource]) -> str:
+        """Construye el contexto para el LLM con las fuentes encontradas."""
+        lines = []
+        for source in sources:
+            lines.append(f"📚 **{source.title}** ({source.source_type}, confiabilidad: {source.reliability}/10)")
+            lines.append(f"🔗 {source.url}")
+            lines.append(f"💡 {source.snippet}")
+            lines.append("")
+        return "\n".join(lines)
+
+    async def _get_llm_response(
+        self,
+        system_prompt: str,
+        history: list[dict],
+        max_tokens: int | None,
+        temperature: float | None,
+        session_id: str,
+        agent_mode: str,
+        use_fallback_on_error: bool,
+        has_rag: bool,
+    ) -> tuple[str, int]:
+        """Helper para obtener respuesta del LLM con lógica de fallback."""
+        # IMPORTANTE: Sistema híbrido
+        # - RAG (con file_id) → Gemini 2.5 (fallback_llm)
+        # - Chat normal → Kimi-K2 (llm)
+        
+        if has_rag and self.fallback_llm:
+            # RAG: Usar Gemini (mejor para contextos largos)
+            print(f"🤖 Usando Gemini 2.5 para RAG")
+            
+            try:
+                response, tokens = await self.fallback_llm.get_chat_completion(
+                    system_prompt=system_prompt,
+                    messages=history,
+                    max_tokens=max_tokens or 2048,  # Más tokens para RAG
+                    temperature=temperature or 0.3,
+                )
+                return response, tokens
+            except Exception as e:
+                print(f"❌ Error en Gemini: {e}")
+                raise
+        else:
+            # Chat normal: Usar Kimi-K2 (más rápido)
+            print(f"🤖 Usando Kimi-K2 para chat normal")
+            
+            try:
+                response, tokens = await self.llm.get_chat_completion(
+                    system_prompt=system_prompt,
+                    messages=history,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    session_id=session_id,
+                    agent_mode=agent_mode,
+                    use_cache=True,  # Caché solo para chat normal
+                )
+                return response, tokens
+            except Exception as e:
+                # Fallback a Gemini si Kimi falla
+                if use_fallback_on_error and self.fallback_llm:
+                    print(f"⚠️ Kimi-K2 falló, usando Gemini como fallback")
+                    response, tokens = await self.fallback_llm.get_chat_completion(
+                        system_prompt=system_prompt,
+                        messages=history,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    return response, tokens
+                else:
+                    raise
