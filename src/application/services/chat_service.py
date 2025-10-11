@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import traceback
 from datetime import datetime, UTC
 from typing import TYPE_CHECKING
 
 from src.domain.models import ChatMessageCreate, ChatSessionCreate, MessageRole
+from src.application.services.metrics_service import MetricsService
 
 if TYPE_CHECKING:
     from src.domain.models import ChatMessage, ChatSession
@@ -58,12 +60,16 @@ class ChatServiceV2:
             repository: Repositorio de chat
             fallback_llm: Cliente LLM de respaldo (ej: Gemini)
             embeddings_service: Servicio de embeddings para RAG (opcional)
+            python_search: Servicio de búsqueda Python (opcional)
         """
         self.llm = llm_client
         self.repo = repository
         self.fallback_llm = fallback_llm
         self.embeddings = embeddings_service
         self.python_search = python_search
+        
+        # Servicio de métricas
+        self.metrics = MetricsService()
         
         # Almacenar últimas fuentes usadas para feedback
         self.last_search_sources: list[PythonSource] = []
@@ -164,12 +170,20 @@ class ChatServiceV2:
             max_tokens: Tokens máximos de respuesta
             temperature: Temperatura del modelo
             use_fallback_on_error: Si usar LLM de respaldo en caso de error
+            use_internet: Si usar búsqueda en Internet
             
+        Returns:
             Respuesta del LLM
             
         Raises:
             ValueError: Si la sesión no existe
         """
+        # Iniciar timer para métricas
+        start_time = time.time()
+        rag_chunks_count = 0
+        used_bear = False
+        bear_sources_count = 0
+        model_used = "kimi-k2"  # Default
         # 1. Validar o crear sesión
         if session_id == "0" or not session_id:
             # Crear nueva sesión si no existe
@@ -233,7 +247,9 @@ class ChatServiceV2:
                         acc += len(snippet)
                     
                     rag_context = "\n\n".join(parts)
-                    logger.info(f"📄 Contexto RAG: {acc} caracteres de {len(parts)} chunks")
+                    rag_chunks_count = len(parts)  # Guardar para métricas
+                    model_used = "gemini-2.5-flash"  # RAG usa Gemini
+                    logger.info(f"📄 Contexto RAG: {acc} caracteres de {rag_chunks_count} chunks")
                     logger.debug(f"🔍 Preview contexto: {rag_context[:300]}...")
                 else:
                     logger.warning(f"⚠️ RAG: No se encontraron chunks para file_id={file_id}")
@@ -278,6 +294,8 @@ class ChatServiceV2:
             if self._should_search_internet(user_message, initial_response):
                 sources = await self._search_python_sources(user_message)
                 if sources:
+                    used_bear = True  # Marcar uso de Bear API
+                    bear_sources_count = len(sources)  # Contar fuentes
                     self.last_search_sources = sources
                     context = self._build_internet_context(sources)
                     
@@ -313,6 +331,30 @@ class ChatServiceV2:
             content=response,
         )
         self.repo.add_message(assistant_msg_data)
+        
+        # 9. Registrar métricas
+        response_time = time.time() - start_time
+        try:
+            # Extraer tokens de la respuesta (si están disponibles)
+            prompt_tokens = tokens.get('prompt_tokens', 0) if isinstance(tokens, dict) else 0
+            completion_tokens = tokens.get('completion_tokens', 0) if isinstance(tokens, dict) else 0
+            
+            self.metrics.record_agent_usage(
+                session_id=session_id,
+                agent_mode=agent_mode,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                response_time=response_time,
+                model_name=model_used,
+                has_rag_context=bool(rag_context),
+                rag_chunks_used=rag_chunks_count,
+                file_id=str(file_id) if file_id else None,
+                used_bear_search=used_bear,
+                bear_sources_count=bear_sources_count
+            )
+            logger.info(f"📊 Métricas registradas: {prompt_tokens + completion_tokens} tokens, {response_time:.2f}s")
+        except Exception as e:
+            logger.error(f"❌ Error registrando métricas: {e}")
         
         return response
     

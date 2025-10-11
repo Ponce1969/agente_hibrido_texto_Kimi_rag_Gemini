@@ -6,7 +6,7 @@ from src.adapters.api.endpoints import files
 from src.adapters.api.endpoints import pg
 from src.adapters.api.endpoints import embeddings
 from src.adapters.api.endpoints import chat_bear
-from src.adapters.api import metrics
+from src.adapters.api.endpoints import metrics
 from src.adapters.db.database import create_db_and_tables
 
 
