@@ -28,10 +28,11 @@ class Settings(BaseSettings):
     # --- API Keys y Secretos ---
     groq_api_key: str = Field(..., description="API key para Groq.")
     gemini_api_key: str | None = Field(None, description="API key para Gemini (Google AI Studio)")
+    bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
     
     # --- Modelo LLM ---
     groq_model_name: str = Field(
-        "moonshotai/kimi-k2-instruct",
+        "moonshotai/kimi-k2-instruct-0905",
         description="Nombre del modelo de Groq a utilizar.",
     )
     gemini_model_name: str = Field(
@@ -52,8 +53,26 @@ class Settings(BaseSettings):
     # --- Base de Datos ---
     database_url: str = Field(
         "sqlite:///./data/chat_history.db",
-        description="URL de conexión a la base de datos, apuntando al volumen de Docker.",
+        description="URL de conexión a la base de datos por defecto (SQLite).",
     )
+    # URL opcional para Postgres (pgvector). Si no se establece, se ignora y la app sigue usando SQLite.
+    database_url_pg: str | None = Field(
+        default=None,
+        description="URL de conexión a PostgreSQL (opcional) para almacenamiento de embeddings con pgvector.",
+    )
+    
+    # Backend de base de datos a usar
+    db_backend: str = Field(
+        "sqlite",
+        description="Backend de base de datos: sqlite o postgresql"
+    )
+    
+    @property
+    def effective_database_url(self) -> str:
+        """Retorna la URL efectiva de base de datos según la configuración."""
+        if self.db_backend == "postgresql" and self.database_url_pg:
+            return self.database_url_pg
+        return self.database_url
 
     # --- Archivos / Contexto ---
     file_context_max_chars: int = Field(
@@ -71,6 +90,41 @@ class Settings(BaseSettings):
     file_max_pdf_size_mb: int = Field(
         50,
         description="Tamaño máximo permitido para archivos PDF subidos (en MB)",
+    )
+
+    # --- Embeddings / Rendimiento (Optimizado para AMD APU A10, 16GB RAM) ---
+    embedding_batch_size: int = Field(
+        2,
+        description="Tamaño de lote para encode() del modelo de embeddings. Optimizado para bajos recursos (2-4)",
+    )
+
+    # --- Chunking de texto (optimizado para bajos recursos) ---
+    embedding_chunk_size: int = Field(
+        600,
+        description="Tamaño de chunk de texto para indexación de PDFs (caracteres) - reducido para bajos recursos",
+    )
+    embedding_chunk_overlap: int = Field(
+        100,
+        description="Solapamiento entre chunks de texto (caracteres) - reducido para bajos recursos",
+    )
+
+    # --- Búsqueda Python (Bear API) ---
+    bear_base_url: str = Field(
+        "https://api.github.com/search/repositories",
+        description="URL base de la API de GitHub para búsquedas (alternativa a Bear)",
+    )
+    bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
+    bear_search_enabled: bool = Field(
+        True,
+        description="Habilitar/deshabilitar búsqueda con Bear API",
+    )
+    bear_cache_ttl: int = Field(
+        3600,
+        description="Tiempo de vida del caché en segundos (1 hora por defecto)",
+    )
+    max_search_results: int = Field(
+        5,
+        description="Máximo de resultados de búsqueda a incluir en el contexto",
     )
 
 

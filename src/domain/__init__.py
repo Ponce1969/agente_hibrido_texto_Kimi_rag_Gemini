@@ -1,0 +1,85 @@
+"""
+Domain Layer - Lógica de negocio pura.
+
+Este módulo contiene todas las entidades, servicios y reglas de negocio
+del dominio, independientes de cualquier framework o tecnología específica.
+"""
+
+# Excepciones de dominio
+from .exceptions.domain_exceptions import (
+    DomainException,
+    ChatSessionNotFoundError,
+    ChatSessionAlreadyExistsError,
+    InvalidMessageError,
+    MessageNotFoundError,
+    FileNotFoundError,
+    FileProcessingError,
+    FileSectionNotFoundError,
+    AgentModeNotSupportedError,
+    AIProviderError,
+    InsufficientContextError,
+    RateLimitExceededError,
+    ValidationError
+)
+
+# Modelos de dominio
+from .models.chat_models import (
+    ChatMessage,
+    ChatSession,
+    FileDocument,
+    FileSection,
+    MessageRole
+)
+
+# Interfaces de repositorio
+from .repositories.chat_repository import (
+    ChatRepositoryInterface,
+    FileRepositoryInterface,
+    AgentRepositoryInterface,
+    AnalyticsRepositoryInterface
+)
+
+# Servicios de dominio
+from .services.chat_domain_service import (
+    ChatDomainService,
+    FileDomainService,
+    AgentDomainService,
+    ValidationService
+)
+
+# Exportar todo lo público
+__all__ = [
+    # Excepciones
+    "DomainException",
+    "ChatSessionNotFoundError",
+    "ChatSessionAlreadyExistsError",
+    "InvalidMessageError",
+    "MessageNotFoundError",
+    "FileNotFoundError",
+    "FileProcessingError",
+    "FileSectionNotFoundError",
+    "AgentModeNotSupportedError",
+    "AIProviderError",
+    "InsufficientContextError",
+    "RateLimitExceededError",
+    "ValidationError",
+    
+    # Modelos
+    "ChatMessage",
+    "ChatSession",
+    "FileDocument",
+    "FileSection",
+    "MessageRole",
+    
+    # Interfaces
+    "ChatRepositoryInterface",
+    "FileRepositoryInterface",
+    "AgentRepositoryInterface",
+    "AnalyticsRepositoryInterface",
+    
+    # Servicios
+    "ChatDomainService",
+    "FileDomainService",
+    "AgentDomainService",
+    "ValidationService",
+]

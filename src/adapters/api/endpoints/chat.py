@@ -1,36 +1,19 @@
 """
 Endpoints de la API para gestionar el chat.
-"""
-import httpx
-from fastapi import APIRouter, Depends, HTTPException
-import traceback
-from pydantic import BaseModel
-from sqlmodel import Session
 
-from src.adapters.db.database import get_session
-from src.adapters.db.repository import ChatRepository
-from src.adapters.agents.groq_client import GroqClient
-from src.application.services.chat_service import ChatService
-from src.adapters.agents.gemini_client import GeminiClient
+MIGRADO: Usa ChatServiceV2 con arquitectura hexagonal
+"""
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
 from src.adapters.agents.prompts import AgentMode
+from src.adapters.dependencies import get_chat_service_dependency
+from src.application.services.chat_service import ChatServiceV2
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# --- Inyección de Dependencias ---
-
-def get_groq_client() -> GroqClient:
-    """Dependency para obtener el cliente de Groq."""
-    return GroqClient(client=httpx.AsyncClient())
-
-
-def get_chat_service(
-    session: Session = Depends(get_session),
-    client: GroqClient = Depends(get_groq_client),
-) -> ChatService:
-    """Dependency para obtener el servicio de chat."""
-    repo = ChatRepository(session)
-    gemini = GeminiClient(client=httpx.AsyncClient())
-    return ChatService(repo, client, gemini)
 
 
 # --- Schemas de la API (Pydantic) ---
@@ -57,39 +40,107 @@ class NewSessionResponse(BaseModel):
 @router.post("/sessions", response_model=NewSessionResponse, status_code=201)
 def create_new_session(
     request: NewSessionRequest,
-    service: ChatService = Depends(get_chat_service),
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Crea una nueva sesión de chat."""
     try:
-        session = service.create_new_session(user_id=request.user_id)
+        session = service.create_session_from_user(request.user_id)
         return NewSessionResponse(session_id=session.id)
     except Exception as e:
-        # Devolver detalle para facilitar diagnóstico en desarrollo
-        tb = traceback.format_exc()
-        raise HTTPException(status_code=500, detail=f"create_new_session error: {e}\n{tb}")
+        logger.error(f"Error al crear sesión: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al crear la sesión")
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def handle_chat(
     request: ChatRequest,
-    service: ChatService = Depends(get_chat_service),
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Maneja un mensaje de chat y devuelve la respuesta de la IA."""
     try:
-        reply = await service.handle_chat_message(
-            session_id=request.session_id,
+        logger.info(f"Request de chat recibida para sesión {request.session_id}")
+        logger.debug(f"Detalles del request: {request.model_dump_json()}")
+
+        reply = await service.handle_message(
+            session_id=str(request.session_id),
             user_message=request.message,
-            agent_mode=request.mode,
+            agent_mode=request.mode.value,
             file_id=request.file_id,
-            selected_section_ids=request.selected_section_ids,
-            use_gemini_fallback=request.use_gemini_fallback,
         )
         return ChatResponse(reply=reply)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=e.response.status_code,
-            detail=f"Error en la API de IA: {e.response.text}",
-        )
     except Exception as e:
-        tb = traceback.format_exc()
-        raise HTTPException(status_code=500, detail=f"handle_chat error: {e}\n{tb}")
+        logger.error(f"Error en handle_chat: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al procesar el mensaje")
+
+
+class ChatMessageDTO(BaseModel):
+    role: str
+    content: str
+    index: int
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageDTO])
+def get_session_messages_api(
+    session_id: int,
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
+):
+    """Devuelve los mensajes persistidos para una sesión de chat."""
+    try:
+        messages = service.get_session_messages(str(session_id))
+        if not messages:
+            # Aún si la sesión existe pero no tiene mensajes, devolvemos 200 con lista vacía
+            session = service.get_session(str(session_id))
+            if not session:
+                 raise HTTPException(status_code=404, detail="Sesión no encontrada")
+
+        return [
+            ChatMessageDTO(role=m.role.value, content=m.content, index=m.message_index)
+            for m in messages
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener mensajes de sesión {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al obtener mensajes")
+
+
+class SessionSummaryDTO(BaseModel):
+    id: int
+    user_id: str
+    session_name: str | None = None
+    message_count: int = 0
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@router.get("/sessions", response_model=list[SessionSummaryDTO])
+def list_sessions(
+    user_id: str = Query(..., description="Usuario dueño de las sesiones"),
+    limit: int = Query(30, ge=1, le=200),
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
+):
+    """Lista las sesiones de un usuario con detalles."""
+    try:
+        sessions_details = service.list_sessions_for_user(user_id, limit)
+        return [SessionSummaryDTO(**details) for details in sessions_details]
+    except Exception as e:
+        logger.error(f"Error al listar sesiones para el usuario {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al listar sesiones")
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_session(
+    session_id: int,
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
+):
+    """Elimina una sesión de chat."""
+    try:
+        success = service.delete_session(str(session_id))
+        if not success:
+            raise HTTPException(status_code=404, detail="Sesión no encontrada")
+        return None  # HTTP 204 No Content
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al eliminar sesión {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al eliminar la sesión")

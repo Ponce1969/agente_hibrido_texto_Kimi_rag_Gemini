@@ -8,13 +8,21 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Monta el código fuente para el desarrollo con --reload
+      # Monta el código fuente para el desarrollo
       - ./src:/app/src
-      # Monta un volumen persistente para la base de datos
+      # Monta un volumen persistente para la base de datos SQLite
       - backend_data:/app/data
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+      # Cache de modelos/transformers para evitar re-descargas (acelera equipos con pocos recursos)
+      - models_cache:/root/.cache
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
     env_file:
       - .env
+    environment:
+      # Reduce el uso de hilos y paralelismo del tokenizador en CPU modesta
+      - TOKENIZERS_PARALLELISM=false
+      - OMP_NUM_THREADS=1
+      - INTRA_OP_PARALLELISM_THREADS=1
+      - INTER_OP_PARALLELISM_THREADS=1
 
   frontend:
     build:
@@ -34,6 +42,26 @@ services:
     depends_on:
       - backend
 
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   backend_data:
+  models_cache:
     # Define el volumen para la persistencia de la base de datos
+  pg_data:
+    # Volumen para datos de PostgreSQL

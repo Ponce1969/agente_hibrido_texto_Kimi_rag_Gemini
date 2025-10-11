@@ -1,0 +1,27 @@
+{
+  "Arquitecto Python Senior": {
+    "chars": 1515,
+    "estimated_tokens": 378,
+    "lines": 32
+  },
+  "Ingeniero de C\u00f3digo": {
+    "chars": 1414,
+    "estimated_tokens": 353,
+    "lines": 30
+  },
+  "Auditor de Seguridad": {
+    "chars": 983,
+    "estimated_tokens": 245,
+    "lines": 23
+  },
+  "Especialista en Bases de Datos": {
+    "chars": 1279,
+    "estimated_tokens": 319,
+    "lines": 28
+  },
+  "Ingeniero de Refactoring": {
+    "chars": 1458,
+    "estimated_tokens": 364,
+    "lines": 30
+  }
+}

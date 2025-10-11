@@ -1,311 +1,516 @@
 """
-Servicio de aplicación que contiene la lógica de negocio principal para el chat.
+Servicio de aplicación de chat refactorizado con arquitectura hexagonal.
+
+Este servicio usa SOLO puertos (interfaces) del dominio, sin dependencias
+de implementaciones concretas (adapters).
+
+Tipado estricto para mypy --strict con Python 3.12+
 """
-from typing import Optional, List, Dict, Any
-from src.adapters.db.repository import ChatRepository
-from src.adapters.agents.groq_client import GroqClient
-from src.adapters.agents.gemini_client import GeminiClient
-from src.adapters.agents.prompts import AgentMode, get_system_prompt
-from src.adapters.db.message import ChatMessageCreate, MessageRole
-from src.adapters.db.chat import ChatSession, ChatSessionCreate
-from src.adapters.db.file_models import FileUpload, FileSection
-from src.adapters.config.settings import settings
 
-import io
-from pypdf import PdfReader  # type: ignore
-import httpx
+from __future__ import annotations
 
-class ChatService:
-    """Orquesta la lógica del chat."""
+import logging
+import re
+import traceback
+from datetime import datetime, UTC
+from typing import TYPE_CHECKING
 
-    def __init__(self, repo: ChatRepository, client: GroqClient, gemini: GeminiClient):
-        self.repo = repo
-        self.client = client
-        self.gemini = gemini
+from src.domain.models import ChatMessageCreate, ChatSessionCreate, MessageRole
 
-    def create_new_session(self, user_id: str, session_name: Optional[str] = None) -> ChatSession:
-        """Crea una nueva sesión de chat para un usuario."""
-        session_create = ChatSessionCreate(user_id=user_id, session_name=session_name)
-        return self.repo.create_session(session_create)
+if TYPE_CHECKING:
+    from src.domain.models import ChatMessage, ChatSession
+    from src.domain.ports import ChatRepositoryPort, EmbeddingsPort, LLMPort
+    from src.domain.ports.python_search_port import PythonSearchPort, PythonSource
+    from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
 
-    async def handle_chat_message(
+
+logger = logging.getLogger(__name__)
+
+
+class ChatServiceV2:
+    """
+    Servicio de aplicación para chat siguiendo arquitectura hexagonal.
+    
+    Este servicio orquesta la lógica de negocio sin conocer detalles
+    de implementación (Groq, Gemini, SQLite, PostgreSQL, etc.).
+    
+    Principios:
+    - Depende SOLO de puertos (interfaces)
+    - No importa de adapters
+    - Lógica de negocio pura
+    - Fácil de testear con mocks
+    """
+    
+    def __init__(
         self,
-        session_id: int,
+        llm_client: LLMPort,
+        repository: ChatRepositoryPort,
+        *,
+        fallback_llm: LLMPort | None = None,
+        embeddings_service: EmbeddingsServiceV2 | None = None,
+        python_search: PythonSearchPort | None = None,
+    ) -> None:
+        """
+        Inicializa el servicio de chat.
+        
+        Args:
+            llm_client: Cliente LLM principal (ej: Groq)
+            repository: Repositorio de chat
+            fallback_llm: Cliente LLM de respaldo (ej: Gemini)
+            embeddings_service: Servicio de embeddings para RAG (opcional)
+        """
+        self.llm = llm_client
+        self.repo = repository
+        self.fallback_llm = fallback_llm
+        self.embeddings = embeddings_service
+        self.python_search = python_search
+        
+        # Almacenar últimas fuentes usadas para feedback
+        self.last_search_sources: list[PythonSource] = []
+    
+    def create_session(self, session_data: ChatSessionCreate) -> ChatSession:
+        """
+        Crea una nueva sesión de chat.
+        
+        Args:
+            session_data: Datos para crear la sesión
+            
+        Returns:
+            Sesión creada
+        """
+        return self.repo.create_session(session_data)
+    
+    def get_session(self, session_id: str) -> ChatSession | None:
+        """
+        Obtiene una sesión por su ID.
+        
+        Args:
+            session_id: ID de la sesión
+            
+        Returns:
+            Sesión encontrada o None
+        """
+        return self.repo.get_session(session_id)
+    
+    def list_sessions(self, *, limit: int = 50) -> list[ChatSession]:
+        """
+        Lista las sesiones de chat.
+        
+        Args:
+            limit: Número máximo de sesiones
+            
+        Returns:
+            Lista de sesiones
+        """
+        return self.repo.list_sessions(limit=limit)
+
+    def create_session_from_user(self, user_id: str) -> ChatSession:
+        """Crea una nueva sesión para un usuario con un título por defecto."""
+        session_data = ChatSessionCreate(
+            user_id=user_id,
+            title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+        )
+        return self.create_session(session_data)
+
+    def delete_session(self, session_id: str) -> bool:
+        """Elimina una sesión de chat."""
+        return self.repo.delete_session(session_id)
+
+    def get_session_messages(self, session_id: str) -> list[ChatMessage]:
+        """Obtiene todos los mensajes de una sesión."""
+        return self.repo.get_session_messages(session_id)
+
+    def list_sessions_for_user(self, user_id: str, limit: int = 50) -> list[dict]:
+        """Lista las sesiones de un usuario con el conteo de mensajes."""
+        all_sessions = self.repo.list_sessions(limit=limit * 2)
+        user_sessions = [s for s in all_sessions if s.user_id == user_id]
+        
+        detailed_sessions = []
+        for s in user_sessions[:limit]:
+            message_count = self.repo.count_session_messages(s.id)
+            detailed_sessions.append(
+                {
+                    "id": int(s.id),
+                    "user_id": s.user_id,
+                    "session_name": s.title if hasattr(s, 'title') else None,
+                    "message_count": message_count,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                }
+            )
+        return detailed_sessions
+
+    
+    async def handle_message(
+        self,
+        session_id: str,
         user_message: str,
-        agent_mode: AgentMode,
-        file_id: Optional[int] = None,
-        selected_section_ids: Optional[List[int]] = None,
-        use_gemini_fallback: Optional[bool] = None,
+        *,
+        agent_mode: str = "architect",
+        file_id: int | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        use_fallback_on_error: bool = True,
+        use_internet: bool = True,
     ) -> str:
-        """Maneja un nuevo mensaje de usuario y retorna la respuesta de la IA."""
-        # 1. Guardar el mensaje del usuario
-        self.repo.add_message(
-            ChatMessageCreate(
-                session_id=session_id,
-                role=MessageRole.USER,
-                content=user_message,
-                message_index=0 # El repositorio calculará el índice correcto
+        """
+        Maneja un mensaje del usuario y retorna la respuesta del LLM.
+        
+        Args:
+            session_id: ID de la sesión
+            user_message: Mensaje del usuario
+            agent_mode: Modo del agente (architect, code_generator, etc.)
+            file_id: ID del archivo PDF para RAG (opcional)
+            max_tokens: Tokens máximos de respuesta
+            temperature: Temperatura del modelo
+            use_fallback_on_error: Si usar LLM de respaldo en caso de error
+            
+            Respuesta del LLM
+            
+        Raises:
+            ValueError: Si la sesión no existe
+        """
+        # 1. Validar o crear sesión
+        if session_id == "0" or not session_id:
+            # Crear nueva sesión si no existe
+            session_data = ChatSessionCreate(
+                user_id="streamlit_user",
+                title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
             )
+            new_session = self.repo.create_session(session_data)
+            session_id = str(new_session.id)
+        else:
+            # Validar que la sesión existe
+            session = self.repo.get_session(session_id)
+            if not session:
+                raise ValueError(f"Sesión {session_id} no encontrada")
+        
+        # 2. Guardar mensaje del usuario
+        user_msg_data = ChatMessageCreate(
+            session_id=session_id,
+            role=MessageRole.USER,
+            content=user_message,
         )
-
-        # 2. Obtener el historial de la conversación
+        self.repo.add_message(user_msg_data)
+        
+        # 3. Obtener historial de mensajes
         history = self.repo.get_session_messages(session_id)
-
-        # 3. Obtener el prompt del sistema para el agente seleccionado
-        system_prompt = get_system_prompt(agent_mode)
-
-        # Helper: transformar historial a formato OpenAI-compatible
-        def build_openai_messages() -> List[Dict[str, Any]]:
-            msgs: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-            for m in history:
-                msgs.append({"role": m.role.value, "content": m.content})
-            # Último mensaje del usuario ya está en history; no hace falta añadir de nuevo
-            return msgs
-
-        # Si el usuario seleccionó secciones explícitas, construir un contexto conciso y hacer UNA llamada
-        if file_id is not None and selected_section_ids:
-            from sqlmodel import select
-            texts: List[str] = []
-            total_chars = 0
-            limit = settings.file_context_max_chars
-            # Traer en orden los textos de las secciones seleccionadas
-            for sid in selected_section_ids:
-                sec = self.repo.session.get(FileSection, sid)
-                if not sec:
-                    continue
-                fu = self.repo.session.get(FileUpload, sec.file_id)
-                if not fu:
-                    continue
-                with open(fu.path, "rb") as f:
-                    raw = f.read()
-                reader = PdfReader(io.BytesIO(raw))
-                parts: List[str] = []
-                for idx in range(sec.start_page, sec.end_page + 1):
-                    try:
-                        txt = reader.pages[idx].extract_text() or ""
-                    except Exception:
-                        txt = ""
-                    parts.append(txt)
-                section_text = "\n".join(parts)
-                # Añadir mientras no superemos el límite
-                remaining = limit - total_chars
-                if remaining <= 0:
-                    break
-                texts.append(section_text[:remaining])
-                total_chars += min(len(section_text), remaining)
-
-            context = "\n\n".join(texts)
-            short_prompt = (
-                f"Usa exclusivamente el siguiente contexto de PDF seleccionado para responder de forma concisa.\n"
-                f"--- CONTEXTO ---\n{context}\n--- FIN CONTEXTO ---\n\n"
-                f"Pregunta: {user_message}"
+        
+        # 4. Buscar contexto RAG si hay file_id
+        rag_context = ""
+        if file_id and self.embeddings:
+            try:
+                # Buscar chunks relevantes
+                results = await self.embeddings.search_similar(
+                    query=user_message,
+                    file_id=str(file_id),
+                    top_k=5
+                )
+                
+                if results:
+                    logger.info(f"✅ RAG: {len(results)} chunks encontrados para file_id={file_id}")
+                    # Construir contexto con límite de 8000 caracteres
+                    limit = 8000
+                    acc = 0
+                    parts: list[str] = []
+                    
+                    for r in results:
+                        remaining = limit - acc
+                        if remaining <= 100:  # Mínimo para que valga la pena
+                            break
+                        
+                        # EmbeddingsServiceV2 retorna 'text', no 'content'
+                        content = r.get('text', '')
+                        chunk_idx = r.get('chunk_index', 0)
+                        similarity = r.get('similarity', 0.0)
+                        
+                        if not content:
+                            logger.warning(f"⚠️ Chunk {chunk_idx} sin contenido: {r.keys()}")
+                            continue
+                        
+                        snippet = content[:remaining]
+                        parts.append(f"[chunk {chunk_idx}, score={similarity:.3f}]\n{snippet}")
+                        acc += len(snippet)
+                    
+                    rag_context = "\n\n".join(parts)
+                    logger.info(f"📄 Contexto RAG: {acc} caracteres de {len(parts)} chunks")
+                    logger.debug(f"🔍 Preview contexto: {rag_context[:300]}...")
+                else:
+                    logger.warning(f"⚠️ RAG: No se encontraron chunks para file_id={file_id}")
+            except Exception as e:
+                logger.error(f"❌ Error en búsqueda RAG: {e}")
+                logger.error(traceback.format_exc())
+        
+        # 5. Construir system prompt
+        system_prompt = self._get_system_prompt(agent_mode)
+        
+        # Si hay contexto RAG, PRIORIZAR el contexto del PDF
+        if rag_context:
+            # Prompt EXPLÍCITO que identifica el archivo
+            system_prompt = (
+                f"Eres un asistente experto en análisis de documentos. El usuario ha cargado un documento PDF (identificado como file_id={file_id}).\n\n"
+                "**INSTRUCCIONES CRÍTICAS:**\n"
+                f"1. Tienes acceso COMPLETO al contenido del documento file_id={file_id}\n"
+                "2. El contenido del documento se proporciona a continuación\n"
+                "3. Cuando el usuario pregunte por 'file_id={file_id}', se refiere al documento que tienes aquí\n"
+                "4. NUNCA digas 'no tengo acceso' - SÍ tienes el documento completo abajo\n\n"
+                f"--- CONTENIDO COMPLETO DEL DOCUMENTO file_id={file_id} ---\n\n"
+                f"{rag_context}\n\n"
+                "--- FIN DEL DOCUMENTO ---\n\n"
+                "Responde todas las preguntas basándote en este contenido. Si te preguntan si ves el documento, responde SÍ."
             )
-            # Añadir mensaje USER adicional al historial para mantener trazabilidad
-            history = self.repo.get_session_messages(session_id)
-            system_prompt = get_system_prompt(agent_mode)
-            # Llamada única con menor max_tokens para ahorrar cuota
-            prefer_gemini = (
-                (settings.llm_provider_preference == "gemini_for_pdf_kimi_for_chat")
-                or bool(use_gemini_fallback)
-            ) and self.gemini is not None
-
-            if prefer_gemini:
-                ai_response_content = await self.gemini.get_chat_completion(
-                    system_prompt=system_prompt,
-                    messages=history + [type('Obj', (), {'role': MessageRole.USER, 'content': short_prompt})()],
-                    max_tokens=min(768, settings.max_tokens),
-                    temperature=settings.temperature,
-                )
-            else:
-                try:
-                    ai_response_content = await self.client.get_chat_completion(
-                        system_prompt=system_prompt,
-                        messages=history + [
-                            type('Obj', (), {'role': MessageRole.USER, 'content': short_prompt})(),
-                        ],
-                        max_tokens=min(768, settings.max_tokens),
-                    )
-                except httpx.HTTPStatusError as e:
-                    # Fallback a Gemini si hay 429 de Kimi
-                    if e.response is not None and e.response.status_code == 429 and self.gemini:
-                        ai_response_content = await self.gemini.get_chat_completion(
-                            system_prompt=system_prompt,
-                            messages=history + [type('Obj', (), {'role': MessageRole.USER, 'content': short_prompt})()],
-                            max_tokens=min(768, settings.max_tokens),
-                            temperature=settings.temperature,
-                        )
-                    else:
-                        raise
-            # Guardar respuesta
-            self.repo.add_message(
-                ChatMessageCreate(
-                    session_id=session_id,
-                    role=MessageRole.ASSISTANT,
-                    content=ai_response_content,
-                    message_index=0,
-                )
-            )
-            return ai_response_content
-
-        # Tools para PDFs grandes si file_id está presente y NO hay selección explícita
-        if file_id is not None:
-            tools = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "list_sections",
-                        "description": "Lista secciones del PDF por rangos de páginas",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "file_id": {"type": "integer"}
-                            },
-                            "required": ["file_id"],
-                        },
-                    },
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "get_section_text",
-                        "description": "Obtiene texto truncado de una sección específica",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "section_id": {"type": "integer"}
-                            },
-                            "required": ["section_id"],
-                        },
-                    },
-                },
-            ]
-
-            # Funciones reales
-            def exec_list_sections(fid: int) -> str:
-                from sqlmodel import select
-                secs = self.repo.session.exec(
-                    select(FileSection).where(FileSection.file_id == fid).order_by(FileSection.start_page)
-                ).all()
-                items = [
-                    {
-                        "id": s.id,
-                        "start_page": s.start_page,
-                        "end_page": s.end_page,
-                        "char_count": s.char_count,
-                    }
-                    for s in secs
-                ]
-                import json
-                return json.dumps({"sections": items})
-
-            def exec_get_section_text(section_id: int) -> str:
-                sec = self.repo.session.get(FileSection, section_id)
-                if not sec:
-                    return "{}"
-                fu = self.repo.session.get(FileUpload, sec.file_id)
-                if not fu:
-                    return "{}"
-                with open(fu.path, "rb") as f:
-                    raw = f.read()
-                reader = PdfReader(io.BytesIO(raw))
-                parts: List[str] = []
-                for idx in range(sec.start_page, sec.end_page + 1):
-                    try:
-                        txt = reader.pages[idx].extract_text() or ""
-                    except Exception:
-                        txt = ""
-                    parts.append(txt)
-                text = "\n".join(parts)
-                if len(text) > settings.file_context_max_chars:
-                    text = text[: settings.file_context_max_chars]
-                import json
-                return json.dumps({"text": text})
-
-            # Orquestación tool-calling (hasta 3 pasos)
-            messages_openai = build_openai_messages()
-            iterations = 0
-            while iterations < 3:
-                iterations += 1
-                # Limitar tokens en llamadas con tools para evitar 429 por TPD
-                try:
-                    result = await self.client.chat_with_tools(
-                        messages_openai, tools, tool_choice="auto", max_tokens=min(1024, settings.max_tokens)
-                    )
-                except httpx.HTTPStatusError as e:
-                    # Fallback básico: responder sin acceder al PDF (ahorro de tokens)
-                    if e.response is not None and e.response.status_code == 429 and self.gemini:
-                        # Respuesta acotada sin contexto para no fallar la UX
-                        ai_response_content = await self.gemini.get_chat_completion(
-                            system_prompt=system_prompt,
-                            messages=history,
-                            max_tokens=min(512, settings.max_tokens),
-                            temperature=settings.temperature,
-                        )
-                        self.repo.add_message(
-                            ChatMessageCreate(
-                                session_id=session_id,
-                                role=MessageRole.ASSISTANT,
-                                content=ai_response_content,
-                                message_index=0
-                            )
-                        )
-                        return ai_response_content
-                    else:
-                        raise
-                choice = result.get("choices", [{}])[0]
-                msg = choice.get("message", {})
-                tool_calls = msg.get("tool_calls")
-                if tool_calls:
-                    # Ejecutar tools y adjuntar outputs
-                    for call in tool_calls:
-                        fn = call["function"]["name"]
-                        import json
-                        args = json.loads(call["function"].get("arguments", "{}"))
-                        output = "{}"
-                        if fn == "list_sections":
-                            output = exec_list_sections(args.get("file_id", file_id))
-                        elif fn == "get_section_text":
-                            output = exec_get_section_text(args.get("section_id"))
-                        # Añadir mensaje de tool
-                        messages_openai.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": call.get("id", ""),
-                                "name": fn,
-                                "content": output,
-                            }
-                        )
-                    # También añadimos el mensaje del assistant que solicitó tool_calls
-                    messages_openai.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
-                    continue
-                # Respuesta final
-                content = msg.get("content") or ""
-                # 5. Guardar la respuesta de la IA
-                self.repo.add_message(
-                    ChatMessageCreate(
-                        session_id=session_id,
-                        role=MessageRole.ASSISTANT,
-                        content=content,
-                        message_index=0
-                    )
-                )
-                return content
-
-        # 4. Llamada estándar sin tools
-        ai_response_content = await self.client.get_chat_completion(
+            logger.debug(f"🎯 System prompt RAG: {len(system_prompt)} caracteres")
+        
+        # 6. Obtener respuesta inicial del LLM
+        initial_response, tokens = await self._get_llm_response(
             system_prompt=system_prompt,
-            messages=history
+            history=history,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            session_id=session_id,
+            agent_mode=agent_mode,
+            use_fallback_on_error=use_fallback_on_error,
+            has_rag=bool(rag_context),
+        )
+        
+        # 7. Verificar si necesita búsqueda en Internet
+        if use_internet and self.python_search and not rag_context:
+            if self._should_search_internet(user_message, initial_response):
+                sources = await self._search_python_sources(user_message)
+                if sources:
+                    self.last_search_sources = sources
+                    context = self._build_internet_context(sources)
+                    
+                    # Re-llamar al LLM con contexto adicional
+                    enriched_prompt = (
+                        f"{system_prompt}\n\n"
+                        f"🔍 Información adicional de fuentes Python confiables:\n"
+                        f"{context}\n\n"
+                        f"Usa esta información para proporcionar una respuesta más precisa y actualizada."
+                    )
+                    
+                    response, tokens = await self._get_llm_response(
+                        system_prompt=enriched_prompt,
+                        history=history,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        session_id=session_id,
+                        agent_mode=agent_mode,
+                        use_fallback_on_error=use_fallback_on_error,
+                        has_rag=bool(rag_context),
+                    )
+                else:
+                    response = initial_response
+            else:
+                response = initial_response
+        else:
+            response = initial_response
+        
+        # 8. Guardar respuesta del asistente
+        assistant_msg_data = ChatMessageCreate(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=response,
+        )
+        self.repo.add_message(assistant_msg_data)
+        
+        return response
+    
+    def _get_system_prompt(self, agent_mode: str) -> str:
+        """
+        Obtiene el system prompt para un modo de agente.
+        
+        Args:
+            agent_mode: Modo del agente
+            
+        Returns:
+            System prompt
+        """
+        # Prompts básicos por modo
+        prompts = {
+            "architect": (
+                "Eres un arquitecto de software senior especializado en Python 3.12+. "
+                "Produces código mantenible siguiendo arquitectura hexagonal, SOLID y Clean Code. "
+                "Usas FastAPI, SQLModel, Pydantic v2, pytest. "
+                "Siempre incluyes type hints completos y docstrings."
+            ),
+            "code_generator": (
+                "Eres un ingeniero de código especializado en Python 3.12+. "
+                "Generas soluciones eficientes y modernas. "
+                "Usas FastAPI, SQLAlchemy, asyncio. "
+                "Código listo para producción con tests."
+            ),
+            "security_analyst": (
+                "Eres un auditor de seguridad especializado en Python. "
+                "Identificas vulnerabilidades OWASP Top 10. "
+                "Usas bandit, semgrep, pip-audit. "
+                "Proporcionas mitigaciones claras."
+            ),
+            "database_specialist": (
+                "Eres un especialista en bases de datos PostgreSQL 15+. "
+                "Optimizas esquemas y queries. "
+                "Usas EXPLAIN ANALYZE, índices, RLS. "
+                "SQL optimizado con justificación."
+            ),
+            "refactor_engineer": (
+                "Eres un ingeniero de refactoring especializado en Python 3.12+. "
+                "Reduces complejidad sin cambiar comportamiento. "
+                "Aplicas SOLID, patrones de refactoring. "
+                "Código más limpio y mantenible."
+            ),
+        }
+        
+        return prompts.get(agent_mode, prompts["architect"])
+    
+    def _should_search_internet(self, user_message: str, kimi_response: str) -> bool:
+        """Detecta si Kimi no pudo resolver el problema y necesita búsqueda."""
+        # Señales AMPLIADAS de que Kimi no tiene la información
+        uncertainty_signals = [
+            r"\bno (tengo|cuento con|puedo proporcionar)\b",
+            r"\b(desconozco|ignoro|no estoy seguro)\b",
+            r"\bno puedo\b",
+            r"\bno tengo\b",
+            r"\bno dispongo\b",
+            r"\bpodrías consultar\b",
+            r"\bpodrías buscar\b",
+            r"\berror.*desconocido\b",
+            r"\bno encuentro\b",
+            r"\bno tengo acceso\b",
+            r"\bno puedo ver\b",
+            r"\bno disponible\b",
+            r"\bcomo modelo de lenguaje\b",  # ¡CLAVE! Detecta cuando dice "como modelo"
+            r"\bno tengo la capacidad\b",
+            r"\bno puedo navegar\b",
+            r"\bno puedo acceder\b",
+        ]
+        
+        kimis_uncertain = any(
+            re.search(pattern, kimi_response, re.IGNORECASE) 
+            for pattern in uncertainty_signals
         )
 
-        # 5. Guardar la respuesta de la IA
-        self.repo.add_message(
-            ChatMessageCreate(
-                session_id=session_id,
-                role=MessageRole.ASSISTANT,
-                content=ai_response_content,
-                message_index=0 # El repositorio calculará el índice correcto
-            )
+        # Si el usuario menciona GitHub, búsqueda o internet
+        search_mentioned = bool(
+            re.search(r"\b(github|buscar|internet|repo|repositorio)\b", user_message, re.IGNORECASE)
         )
 
-        # 6. Retornar la respuesta de la IA
-        return ai_response_content
+        # Si el usuario menciona un traceback o error específico
+        traceback_mentioned = bool(
+            re.search(r"Traceback|Error|Exception", user_message, re.IGNORECASE)
+        )
+        
+        # Si menciona arquitectura hexagonal o patrones específicos
+        architecture_mentioned = bool(
+            re.search(r"\b(arquitectura hexagonal|clean architecture|ports and adapters)\b", user_message, re.IGNORECASE)
+        )
+        
+        # Si pregunta por una API específica
+        api_question = bool(
+            re.search(r"\b(cómo usar|cómo funciona|ejemplo de|ejemplos de)\b.*\w+", user_message, re.IGNORECASE)
+        )
+
+        # Activar siempre que NO sea una consulta general rechazada
+        is_general_query = bool(
+            re.search(r"\b(clima|temperatura|hora|dólar|euro|noticias|recetas)\b", user_message, re.IGNORECASE)
+        )
+        
+        # Activar para preguntas sobre versiones, novedades y actualizaciones
+        version_question = bool(
+            re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE)
+        )
+
+        return (kimis_uncertain or search_mentioned or traceback_mentioned or 
+                architecture_mentioned or api_question or version_question) and not is_general_query
+
+    async def _search_python_sources(self, user_message: str) -> list[PythonSource]:
+        """Ejecuta búsqueda Bear para cualquier pregunta Python válida."""
+        if not self.python_search:
+            return []
+            
+        # Determinar tipo de búsqueda basado en el contenido
+        search_type = "general"
+        
+        if "Traceback" in user_message:
+            search_type = "bug"
+            return await self.python_search.search_python_bug(user_message)
+        elif re.search(r"\b(cómo usar|ejemplo|funciona)\b.*\w+\.\w+", user_message, re.IGNORECASE):
+            api_match = re.search(r"(\w+)\.(\w+)", user_message)
+            if api_match:
+                module, attr = api_match.groups()
+                return await self.python_search.search_python_api(module, attr)
+        elif re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE):
+            search_type = "version"
+            return await self.python_search.search_python_best_practice("latest python version release")
+        
+        # Default: búsqueda general para cualquier pregunta Python válida
+        return await self.python_search.search_python_best_practice(user_message)
+
+    def _build_internet_context(self, sources: list[PythonSource]) -> str:
+        """Construye el contexto para el LLM con las fuentes encontradas."""
+        lines = []
+        for source in sources:
+            lines.append(f"📚 **{source.title}** ({source.source_type}, confiabilidad: {source.reliability}/10)")
+            lines.append(f"🔗 {source.url}")
+            lines.append(f"💡 {source.snippet}")
+            lines.append("")
+        return "\n".join(lines)
+
+    async def _get_llm_response(
+        self,
+        system_prompt: str,
+        history: list[dict],
+        max_tokens: int | None,
+        temperature: float | None,
+        session_id: str,
+        agent_mode: str,
+        use_fallback_on_error: bool,
+        has_rag: bool,
+    ) -> tuple[str, int]:
+        """Helper para obtener respuesta del LLM con lógica de fallback."""
+        # IMPORTANTE: Sistema híbrido
+        # - RAG (con file_id) → Gemini 2.5 (fallback_llm)
+        # - Chat normal → Kimi-K2 (llm)
+        
+        if has_rag and self.fallback_llm:
+            # RAG: Usar Gemini (mejor para contextos largos)
+            logger.info(f"🤖 Usando Gemini 2.5 para RAG")
+            
+            try:
+                response, tokens = await self.fallback_llm.get_chat_completion(
+                    system_prompt=system_prompt,
+                    messages=history,
+                    max_tokens=max_tokens or 2048,  # Más tokens para RAG
+                    temperature=temperature or 0.3,
+                )
+                return response, tokens
+            except Exception as e:
+                logger.error(f"❌ Error en Gemini: {e}")
+                raise
+        else:
+            # Chat normal: Usar Kimi-K2 (más rápido)
+            logger.info(f"🤖 Usando Kimi-K2 para chat normal")
+            
+            try:
+                response, tokens = await self.llm.get_chat_completion(
+                    system_prompt=system_prompt,
+                    messages=history,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    session_id=session_id,
+                    agent_mode=agent_mode,
+                    use_cache=True,  # Caché solo para chat normal
+                )
+                return response, tokens
+            except Exception as e:
+                # Fallback a Gemini si Kimi falla
+                if use_fallback_on_error and self.fallback_llm:
+                    logger.warning(f"⚠️ Kimi-K2 falló, usando Gemini como fallback. Error: {e}")
+                    response, tokens = await self.fallback_llm.get_chat_completion(
+                        system_prompt=system_prompt,
+                        messages=history,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    return response, tokens
+                else:
+                    raise
