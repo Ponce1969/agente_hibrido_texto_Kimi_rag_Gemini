@@ -1,5 +1,5 @@
 from typing import List, Optional
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select, func, delete
 from sqlalchemy.orm import selectinload
 from src.adapters.db.chat import ChatSession, ChatSessionCreate, ChatSessionUpdate
 from src.adapters.db.message import ChatMessage, ChatMessageCreate, MessageRole
@@ -29,15 +29,13 @@ class ChatRepository:
         )
         return self.session.exec(statement).first()
     
-    def get_user_sessions(self, user_id: str, limit: int = 50) -> List[ChatSession]:
-        """Obtiene las sesiones de un usuario"""
-        statement = (
-            select(ChatSession)
-            .where(ChatSession.user_id == user_id)
-            .order_by(ChatSession.updated_at.desc())
-            .limit(limit)
-        )
-        return list(self.session.exec(statement))
+    async def list_sessions(self, limit: int = 50, offset: int = 0) -> List[ChatSession]:
+        """Obtiene todas las sesiones."""
+        import asyncio
+        def _list_sessions():
+            statement = select(ChatSession).order_by(ChatSession.updated_at.desc()).limit(limit).offset(offset)
+            return list(self.session.exec(statement))
+        return await asyncio.to_thread(_list_sessions)
     
     def update_session(self, session_id: int, updates: ChatSessionUpdate) -> Optional[ChatSession]:
         """Actualiza una sesión existente"""
@@ -95,38 +93,32 @@ class ChatRepository:
         )
         return list(self.session.exec(statement))
     
-    def get_last_messages(self, session_id: int, limit: int = 10) -> List[ChatMessage]:
-        """Obtiene los últimos N mensajes de una sesión"""
-        statement = (
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.message_index.desc())
-            .limit(limit)
-        )
-        return list(reversed(self.session.exec(statement).all()))
+    async def count_session_messages(self, session_id: int) -> int:
+        """Cuenta los mensajes de una sesión."""
+        import asyncio
+
+        def _count():
+            statement = select(func.count(ChatMessage.id)).where(ChatMessage.session_id == session_id)
+            return self.session.exec(statement).one_or_none() or 0
+
+        return await asyncio.to_thread(_count)
     
-    def get_message_count(self, session_id: int) -> int:
-        """Cuenta los mensajes en una sesión"""
-        statement = select(func.count(ChatMessage.id)).where(
-            ChatMessage.session_id == session_id
-        )
-        return self.session.exec(statement).first() or 0
     
     def clear_session(self, session_id: int) -> int:
         """Limpia todos los mensajes de una sesión"""
         deleted_count = self.session.exec(
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session_id)
+            select(ChatMessage).where(ChatMessage.session_id == session_id)
         ).count()
-        
-        self.session.query(ChatMessage).filter(
-            ChatMessage.session_id == session_id
-        ).delete()
-        
-        # Actualizar timestamp
+
+        delete_stmt = delete(ChatMessage).where(ChatMessage.session_id == session_id)
+        self.session.exec(delete_stmt)
+
         session = self.get_session(session_id)
         if session:
             session.updated_at = func.now()
-        
+
         self.session.commit()
         return deleted_count
+
+
+        

@@ -15,6 +15,7 @@ class FileStatus(str, Enum):
     
     PENDING = "pending"
     PROCESSING = "processing"
+    READY = "ready"
     INDEXED = "indexed"
     ERROR = "error"
 
@@ -27,16 +28,18 @@ class FileDocument:
     filename: str
     file_path: str
     status: FileStatus
-    total_chunks: int = 0
+    # Campos adicionales usados por endpoints/repositorios SQL
+    total_pages: int | None = None
+    pages_processed: int | None = None
+    error_message: str | None = None
+    size_bytes: int | None = None
     created_at: datetime | None = None
+    updated_at: datetime | None = None
     
     def __post_init__(self) -> None:
         """Validación después de inicialización."""
         if not self.filename.strip():
             raise ValueError("El nombre de archivo no puede estar vacío")
-        
-        if self.total_chunks < 0:
-            raise ValueError("El número de chunks debe ser no negativo")
     
     def is_indexed(self) -> bool:
         """Verifica si el documento está indexado."""

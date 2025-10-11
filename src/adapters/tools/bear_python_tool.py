@@ -232,63 +232,32 @@ class BearPythonTool(PythonSearchPort):
         return await self._execute_search(query, 8, "best_practice")
 
     async def _execute_search(self, query: str, num_results: int, search_type: str) -> List[PythonSource]:
-        """Ejecuta la búsqueda usando GitHub API."""
-        # Verificar caché primero
+        """Ejecuta la búsqueda y la filtra."""
         cache_key = self._get_cache_key(query, search_type)
-        cached_result = self._get_from_cache(cache_key)
-        
-        if cached_result is not None:
-            return cached_result
-        
-        # Construir búsqueda para GitHub
-        github_query = f"{query} language:python"
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return cached
+
         params = {
-            "q": github_query,
-            "sort": "updated",
-            "order": "desc",
-            "per_page": min(num_results, 30)
+            "q": query,
+            "limit": num_results * 2,  # Pedir más para tener margen de filtrado
         }
-        
-        headers = {
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "Python-Bear-Search/1.0"
-        }
-        
-        # Agregar token si existe
-        if self.api_key and self.api_key != "tu_clave_de_bear_aqui":
-            headers["Authorization"] = f"token {self.api_key}"
+        headers = {"X-API-Key": self.api_key}
 
         try:
-            print(f"🔍 GitHub API: Búsqueda para '{github_query}'")
-            response = await self.client.get(
-                "https://api.github.com/search/repositories",
-                params=params,
-                headers=headers
-            )
+            print(f"🔍 Bear API: Búsqueda para '{query}'")
+            response = await self.client.get(self.base_url, params=params, headers=headers)
             response.raise_for_status()
-            data = response.json()
+            data = await response.json()
             
-            # Convertir resultados de GitHub a nuestro formato
-            results = []
-            for item in data.get("items", [])[:num_results]:
-                source = PythonSource(
-                    title=item.get("full_name", "Repositorio sin nombre"),
-                    url=item.get("html_url", ""),
-                    snippet=item.get("description", "Sin descripción")[:200],
-                    source_type="github",
-                    reliability=8 if item.get("stargazers_count", 0) > 100 else 6
-                )
-                results.append(source)
+            raw_results = data.get("results", [])
+            filtered_results = self._filter_sources(raw_results)
             
-            print(f"🔍 GitHub API: {len(results)} repositorios encontrados")
-            
-            # Guardar en caché
-            self._set_cache(cache_key, results)
-            return results
-            
+            self._set_cache(cache_key, filtered_results)
+            return filtered_results
+
         except Exception as e:
-            print(f"⚠️ GitHub API Error: {e}")
-            # Fallback a búsqueda web general
+            print(f"⚠️ Bear API Error: {e}")
             return await self._fallback_search(query, num_results)
 
     def clear_cache(self) -> None:

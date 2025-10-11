@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, Mock
 
 from src.domain.ports import EmbeddingsPort
 from src.domain.models.file_models import FileDocument, FileSection, FileStatus
-from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2, chunk_text
+from src.application.services.embeddings_service import EmbeddingsServiceV2, chunk_text
 
 
 class MockEmbeddingsPort(EmbeddingsPort):
@@ -238,7 +238,7 @@ class TestAdapters:
     
     def test_embeddings_service_v2_import(self) -> None:
         """Test que EmbeddingsServiceV2 se puede importar."""
-        from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
+        from src.application.services.embeddings_service import EmbeddingsServiceV2
         assert EmbeddingsServiceV2 is not None
 
 

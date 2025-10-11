@@ -21,6 +21,12 @@ class MockLLMPort(LLMPort):
     ) -> Tuple[str, int]:
         return self.response, self.tokens_used
 
+    async def get_chat_completion_stream(self, *args, **kwargs):
+        yield self.response
+
+    def estimate_tokens(self, text: str) -> int:
+        return len(text) // 4
+
 
 class MockRepositoryPort(ChatRepositoryPort):
     """Mock del repositorio para testing."""
@@ -58,10 +64,30 @@ class MockRepositoryPort(ChatRepositoryPort):
         self.messages[message_data.session_id].append(message)
         return message
     
-    def get_session_messages(self, session_id: str) -> List[Dict[str, str]]:
-        if session_id not in self.messages:
-            return []
-        return [
-            {"role": msg.role, "content": msg.content}
-            for msg in self.messages[session_id]
-        ]
+    def get_session_messages(self, session_id: str, *, limit: int | None = None) -> list[ChatMessage]:
+        messages = self.messages.get(session_id, [])
+        if limit:
+            return messages[-limit:]
+        return messages
+
+    def update_session(self, session_id: str, *, title: str | None = None) -> ChatSession:
+        session = self.sessions[session_id]
+        if title:
+            session.title = title
+        return session
+
+    def delete_session(self, session_id: str) -> bool:
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+            return True
+        return False
+
+    def get_message(self, message_id: int) -> ChatMessage | None:
+        for msg_list in self.messages.values():
+            for msg in msg_list:
+                if msg.id == str(message_id):
+                    return msg
+        return None
+
+    def count_session_messages(self, session_id: str) -> int:
+        return len(self.messages.get(session_id, []))

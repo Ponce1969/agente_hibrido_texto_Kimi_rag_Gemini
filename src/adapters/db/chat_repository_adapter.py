@@ -143,40 +143,6 @@ class SQLChatRepositoryAdapter(ChatRepositoryPort):
         count = self.session.exec(statement).first()
         return count or 0
     
-    def delete_empty_sessions(self) -> int:
-        """
-        Elimina todas las sesiones que no tienen mensajes.
-        
-        Returns:
-            Número de sesiones eliminadas
-        """
-        # Subquery para encontrar sesiones sin mensajes
-        message_count = (
-            select(func.count(ChatMessageDB.id))
-            .where(ChatMessageDB.session_id == ChatSessionDB.id)
-            .scalar_subquery()
-        )
-        
-        # Seleccionar sesiones vacías
-        empty_sessions = (
-            select(ChatSessionDB.id)
-            .where(message_count == 0)
-        )
-        
-        # Eliminar sesiones vacías
-        statement = (
-            select(ChatSessionDB)
-            .where(ChatSessionDB.id.in_(empty_sessions))
-        )
-        
-        empty_sessions_to_delete = self.session.exec(statement).all()
-        count = len(empty_sessions_to_delete)
-        
-        for session in empty_sessions_to_delete:
-            self.session.delete(session)
-        
-        self.session.commit()
-        return count
     
     def update_session(
         self,
@@ -236,20 +202,12 @@ class SQLChatRepositoryAdapter(ChatRepositoryPort):
         Returns:
             Mensaje creado (modelo de dominio)
         """
-        # Calcular siguiente índice
-        statement = (
-            select(func.max(ChatMessageDB.message_index))
-            .where(ChatMessageDB.session_id == int(message_data.session_id))
-        )
-        max_index = self.session.exec(statement).first()
-        next_index = (max_index or 0) + 1
-        
         # Crear mensaje en DB
         db_message = ChatMessageDB(
             session_id=int(message_data.session_id),
             role=message_data.role.value,
             content=message_data.content,
-            message_index=next_index,
+            message_index=message_data.message_index, # El índice ahora lo calcula el dominio
         )
         
         self.session.add(db_message)

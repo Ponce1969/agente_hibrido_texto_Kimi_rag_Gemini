@@ -9,14 +9,22 @@ Tipado estricto para mypy --strict con Python 3.12+
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import logging
 import re
+import traceback
+from datetime import datetime, UTC
+from typing import TYPE_CHECKING
+
+from src.domain.models import ChatMessageCreate, ChatSessionCreate, MessageRole
 
 if TYPE_CHECKING:
-    from src.domain.ports import LLMPort, ChatRepositoryPort, EmbeddingsPort
+    from src.domain.models import ChatMessage, ChatSession
+    from src.domain.ports import ChatRepositoryPort, EmbeddingsPort, LLMPort
     from src.domain.ports.python_search_port import PythonSearchPort, PythonSource
-    from src.domain.models import ChatSession, ChatMessage, ChatSessionCreate, ChatMessageCreate
     from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChatServiceV2:
@@ -95,6 +103,43 @@ class ChatServiceV2:
             Lista de sesiones
         """
         return self.repo.list_sessions(limit=limit)
+
+    def create_session_from_user(self, user_id: str) -> ChatSession:
+        """Crea una nueva sesión para un usuario con un título por defecto."""
+        session_data = ChatSessionCreate(
+            user_id=user_id,
+            title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+        )
+        return self.create_session(session_data)
+
+    def delete_session(self, session_id: str) -> bool:
+        """Elimina una sesión de chat."""
+        return self.repo.delete_session(session_id)
+
+    def get_session_messages(self, session_id: str) -> list[ChatMessage]:
+        """Obtiene todos los mensajes de una sesión."""
+        return self.repo.get_session_messages(session_id)
+
+    def list_sessions_for_user(self, user_id: str, limit: int = 50) -> list[dict]:
+        """Lista las sesiones de un usuario con el conteo de mensajes."""
+        all_sessions = self.repo.list_sessions(limit=limit * 2)
+        user_sessions = [s for s in all_sessions if s.user_id == user_id]
+        
+        detailed_sessions = []
+        for s in user_sessions[:limit]:
+            message_count = self.repo.count_session_messages(s.id)
+            detailed_sessions.append(
+                {
+                    "id": int(s.id),
+                    "user_id": s.user_id,
+                    "session_name": s.title if hasattr(s, 'title') else None,
+                    "message_count": message_count,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                }
+            )
+        return detailed_sessions
+
     
     async def handle_message(
         self,
@@ -128,9 +173,6 @@ class ChatServiceV2:
         # 1. Validar o crear sesión
         if session_id == "0" or not session_id:
             # Crear nueva sesión si no existe
-            from datetime import datetime, UTC
-            from src.domain.models import ChatSessionCreate
-            
             session_data = ChatSessionCreate(
                 user_id="streamlit_user",
                 title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
@@ -144,8 +186,6 @@ class ChatServiceV2:
                 raise ValueError(f"Sesión {session_id} no encontrada")
         
         # 2. Guardar mensaje del usuario
-        from src.domain.models import ChatMessageCreate, MessageRole
-        
         user_msg_data = ChatMessageCreate(
             session_id=session_id,
             role=MessageRole.USER,
@@ -168,7 +208,7 @@ class ChatServiceV2:
                 )
                 
                 if results:
-                    print(f"✅ RAG: {len(results)} chunks encontrados para file_id={file_id}")
+                    logger.info(f"✅ RAG: {len(results)} chunks encontrados para file_id={file_id}")
                     # Construir contexto con límite de 8000 caracteres
                     limit = 8000
                     acc = 0
@@ -185,7 +225,7 @@ class ChatServiceV2:
                         similarity = r.get('similarity', 0.0)
                         
                         if not content:
-                            print(f"⚠️ Chunk {chunk_idx} sin contenido: {r.keys()}")
+                            logger.warning(f"⚠️ Chunk {chunk_idx} sin contenido: {r.keys()}")
                             continue
                         
                         snippet = content[:remaining]
@@ -193,14 +233,13 @@ class ChatServiceV2:
                         acc += len(snippet)
                     
                     rag_context = "\n\n".join(parts)
-                    print(f"📄 Contexto RAG: {acc} caracteres de {len(parts)} chunks")
-                    print(f"🔍 Preview contexto: {rag_context[:300]}...")
+                    logger.info(f"📄 Contexto RAG: {acc} caracteres de {len(parts)} chunks")
+                    logger.debug(f"🔍 Preview contexto: {rag_context[:300]}...")
                 else:
-                    print(f"⚠️ RAG: No se encontraron chunks para file_id={file_id}")
+                    logger.warning(f"⚠️ RAG: No se encontraron chunks para file_id={file_id}")
             except Exception as e:
-                print(f"❌ Error en búsqueda RAG: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.error(f"❌ Error en búsqueda RAG: {e}")
+                logger.error(traceback.format_exc())
         
         # 5. Construir system prompt
         system_prompt = self._get_system_prompt(agent_mode)
@@ -220,7 +259,7 @@ class ChatServiceV2:
                 "--- FIN DEL DOCUMENTO ---\n\n"
                 "Responde todas las preguntas basándote en este contenido. Si te preguntan si ves el documento, responde SÍ."
             )
-            print(f"🎯 System prompt RAG: {len(system_prompt)} caracteres")
+            logger.debug(f"🎯 System prompt RAG: {len(system_prompt)} caracteres")
         
         # 6. Obtener respuesta inicial del LLM
         initial_response, tokens = await self._get_llm_response(
@@ -434,7 +473,7 @@ class ChatServiceV2:
         
         if has_rag and self.fallback_llm:
             # RAG: Usar Gemini (mejor para contextos largos)
-            print(f"🤖 Usando Gemini 2.5 para RAG")
+            logger.info(f"🤖 Usando Gemini 2.5 para RAG")
             
             try:
                 response, tokens = await self.fallback_llm.get_chat_completion(
@@ -445,11 +484,11 @@ class ChatServiceV2:
                 )
                 return response, tokens
             except Exception as e:
-                print(f"❌ Error en Gemini: {e}")
+                logger.error(f"❌ Error en Gemini: {e}")
                 raise
         else:
             # Chat normal: Usar Kimi-K2 (más rápido)
-            print(f"🤖 Usando Kimi-K2 para chat normal")
+            logger.info(f"🤖 Usando Kimi-K2 para chat normal")
             
             try:
                 response, tokens = await self.llm.get_chat_completion(
@@ -465,7 +504,7 @@ class ChatServiceV2:
             except Exception as e:
                 # Fallback a Gemini si Kimi falla
                 if use_fallback_on_error and self.fallback_llm:
-                    print(f"⚠️ Kimi-K2 falló, usando Gemini como fallback")
+                    logger.warning(f"⚠️ Kimi-K2 falló, usando Gemini como fallback. Error: {e}")
                     response, tokens = await self.fallback_llm.get_chat_completion(
                         system_prompt=system_prompt,
                         messages=history,

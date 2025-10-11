@@ -70,13 +70,17 @@ class ChatDomainService:
         if len(content) > 50000:  # Límite de caracteres
             raise InvalidMessageError("El mensaje es demasiado largo", "máximo 50,000 caracteres")
 
+        # Lógica de dominio: calcular el siguiente índice
+        messages = await self.chat_repository.get_session_messages(session_id)
+        next_index = len(messages)
+
         # Crear el mensaje
         message = ChatMessage(
             session_id=session_id,
             role=role,
             content=content,
             timestamp=datetime.now(UTC),
-            message_index=len(session.messages)
+            message_index=next_index
         )
 
         # Calcular tokens aproximados (1 token ≈ 4 caracteres)

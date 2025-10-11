@@ -76,39 +76,26 @@ class EmbeddingsServiceV2:
     async def search_similar(
         self,
         query: str,
-        file_id: str,
+        file_id: str | None,
         *,
         top_k: int = 5,
         min_similarity: float = 0.0,
     ) -> list[dict[str, Any]]:
         """
         Busca secciones similares a una query.
-        
-        Args:
-            query: Texto de búsqueda
-            file_id: ID del archivo donde buscar
-            top_k: Número máximo de resultados
-            min_similarity: Similitud mínima requerida
-            
-        Returns:
-            Lista de resultados con texto y similitud
         """
-        # Guard clause: validar query
-        if not query.strip():
+        if not query or not query.strip():
             raise ValueError("La query no puede estar vacía")
-        
-        # Generar embedding de la query
+
         query_embedding = await self.embeddings.generate_embedding(query)
-        
-        # Buscar secciones similares
+
         results = await self.embeddings.search_similar(
             query_embedding=query_embedding,
             file_id=file_id,
             top_k=top_k,
             min_similarity=min_similarity,
         )
-        
-        # Convertir a diccionarios para la API
+
         return [
             {
                 "text": result.text,

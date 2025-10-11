@@ -136,8 +136,17 @@ SYSTEM_PROMPTS: Final[dict[AgentMode, str]] = {
 
 # --- Funciones de Validación y Acceso ---
 
-def get_system_prompt(mode: AgentMode) -> str:
-    """Construye el prompt del sistema final."""
+def get_system_prompt(mode: AgentMode | str) -> str:
+    """Construye el prompt del sistema final, aceptando enum o string."""
+    if isinstance(mode, str):
+        # Buscar el enum correspondiente al string
+        for agent_mode in AgentMode:
+            if agent_mode.value.lower() == mode.lower() or agent_mode.name.lower() == mode.lower():
+                return SYSTEM_PROMPTS[agent_mode]
+        # Fallback para claves simples como 'architect'
+        if mode.lower() == 'architect':
+            return SYSTEM_PROMPTS[AgentMode.PYTHON_ARCHITECT]
+        raise KeyError(f"No se encontró un prompt para el modo: '{mode}'")
     return SYSTEM_PROMPTS[mode]
 
 

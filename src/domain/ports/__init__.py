@@ -9,10 +9,14 @@ from __future__ import annotations
 
 from .llm_port import LLMPort
 from .repository_port import ChatRepositoryPort
+from .file_repository_port import FileRepositoryPort
 from .embeddings_port import EmbeddingsPort
+from .python_search_port import PythonSearchPort
 
 __all__ = [
     "LLMPort",
     "ChatRepositoryPort",
     "EmbeddingsPort",
+    "FileRepositoryPort",
+    "PythonSearchPort",
 ]

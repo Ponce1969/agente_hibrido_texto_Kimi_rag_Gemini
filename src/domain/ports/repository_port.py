@@ -16,46 +16,22 @@ if TYPE_CHECKING:
 class ChatRepositoryPort(ABC):
     """
     Puerto para repositorio de chat.
-    
+
     Esta interfaz abstrae la persistencia de datos de chat,
     permitiendo cambiar entre SQLite, PostgreSQL, MongoDB, etc.
     sin afectar la lógica de negocio.
-    
-    Ejemplos de implementaciones:
-        - SQLiteChatRepository: Usa SQLite para persistencia local
-        - PostgresChatRepository: Usa PostgreSQL para producción
-        - InMemoryChatRepository: Usa memoria RAM para testing
     """
-    
+
     @abstractmethod
     def create_session(self, session_data: ChatSessionCreate) -> ChatSession:
-        """
-        Crea una nueva sesión de chat.
-        
-        Args:
-            session_data: Datos para crear la sesión
-            
-        Returns:
-            Sesión creada con ID asignado
-            
-        Raises:
-            RepositoryError: Si hay error en la creación
-        """
+        """Crea una nueva sesión de chat."""
         ...
-    
+
     @abstractmethod
     def get_session(self, session_id: str) -> ChatSession | None:
-        """
-        Obtiene una sesión por su ID.
-        
-        Args:
-            session_id: ID de la sesión
-            
-        Returns:
-            Sesión encontrada o None si no existe
-        """
+        """Obtiene una sesión por su ID."""
         ...
-    
+
     @abstractmethod
     def list_sessions(
         self,
@@ -65,16 +41,16 @@ class ChatRepositoryPort(ABC):
     ) -> list[ChatSession]:
         """
         Lista las sesiones de chat.
-        
+
         Args:
             limit: Número máximo de sesiones a retornar
             offset: Número de sesiones a saltar (paginación)
-            
+
         Returns:
             Lista de sesiones ordenadas por fecha de actualización
         """
         ...
-    
+
     @abstractmethod
     def update_session(
         self,
@@ -82,50 +58,19 @@ class ChatRepositoryPort(ABC):
         *,
         title: str | None = None,
     ) -> ChatSession:
-        """
-        Actualiza una sesión existente.
-        
-        Args:
-            session_id: ID de la sesión
-            title: Nuevo título (opcional)
-            
-        Returns:
-            Sesión actualizada
-            
-        Raises:
-            SessionNotFoundError: Si la sesión no existe
-        """
+        """Actualiza una sesión existente."""
         ...
-    
+
     @abstractmethod
     def delete_session(self, session_id: str) -> bool:
-        """
-        Elimina una sesión y todos sus mensajes.
-        
-        Args:
-            session_id: ID de la sesión
-            
-        Returns:
-            True si se eliminó, False si no existía
-        """
+        """Elimina una sesión de chat."""
         ...
-    
+
     @abstractmethod
     def add_message(self, message_data: ChatMessageCreate) -> ChatMessage:
-        """
-        Agrega un mensaje a una sesión.
-        
-        Args:
-            message_data: Datos del mensaje a crear
-            
-        Returns:
-            Mensaje creado con ID asignado
-            
-        Raises:
-            SessionNotFoundError: Si la sesión no existe
-        """
+        """Agrega un mensaje a una sesión."""
         ...
-    
+
     @abstractmethod
     def get_session_messages(
         self,
@@ -133,40 +78,15 @@ class ChatRepositoryPort(ABC):
         *,
         limit: int | None = None,
     ) -> list[ChatMessage]:
-        """
-        Obtiene los mensajes de una sesión.
-        
-        Args:
-            session_id: ID de la sesión
-            limit: Número máximo de mensajes (None = todos)
-            
-        Returns:
-            Lista de mensajes ordenados por índice
-        """
+        """Obtiene los mensajes de una sesión."""
         ...
-    
+
     @abstractmethod
     def get_message(self, message_id: int) -> ChatMessage | None:
-        """
-        Obtiene un mensaje por su ID.
-        
-        Args:
-            message_id: ID del mensaje
-            
-        Returns:
-            Mensaje encontrado o None si no existe
-        """
+        """Obtiene un mensaje por su ID."""
         ...
-    
+
     @abstractmethod
     def count_session_messages(self, session_id: str) -> int:
-        """
-        Cuenta los mensajes de una sesión.
-        
-        Args:
-            session_id: ID de la sesión
-            
-        Returns:
-            Número de mensajes en la sesión
-        """
+        """Cuenta los mensajes de una sesión."""
         ...

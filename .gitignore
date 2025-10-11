@@ -123,3 +123,7 @@ data/
 
 # Docker
 .dockerignore
+
+# Archivos subidos por usuarios (mantener estructura con .gitkeep)
+uploads/*
+!uploads/.gitkeep

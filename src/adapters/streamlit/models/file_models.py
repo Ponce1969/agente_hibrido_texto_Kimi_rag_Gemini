@@ -34,6 +34,7 @@ class FileUploadInfo:
     total_pages: Optional[int] = None
     size_bytes: Optional[int] = None
     mime_type: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 @dataclass

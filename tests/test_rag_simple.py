@@ -3,25 +3,22 @@ import sys
 sys.path.insert(0, '/app')
 
 async def test():
-    from src.adapters.dependencies import get_session, get_chat_service
+    from src.adapters.dependencies import get_chat_service_dependency
     
-    session = next(get_session())
     try:
-        svc = get_chat_service(session)
+        svc = get_chat_service_dependency()
         
         print("🧪 Testing RAG with file_id=2...")
         reply = await svc.handle_message(
             session_id="0",  # Crea nueva sesión automáticamente
             user_message="Resume este documento en 2 líneas",
             agent_mode="architect",
-            file_id=2
+            file_id=2,  # <--- ID del archivo a testear
         )
-        
-        print("\n📩 RESPUESTA DEL LLM:")
-        print("=" * 80)
-        print(reply)
-        print("=" * 80)
+        print(f"✅ RAG reply: {reply}")
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
     finally:
-        session.close()
+        pass
 
 asyncio.run(test())

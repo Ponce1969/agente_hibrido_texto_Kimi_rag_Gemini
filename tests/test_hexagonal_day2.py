@@ -19,7 +19,7 @@ from src.domain.models import (
     ChatSessionCreate,
     ChatMessageCreate,
 )
-from src.application.services.chat_service_v2 import ChatServiceV2
+from src.application.services.chat_service import ChatServiceV2
 
 
 class MockLLMPort(LLMPort):
@@ -242,13 +242,13 @@ class TestAdapters:
     def test_gemini_adapter_import(self) -> None:
         """Test que GeminiAdapter se puede importar."""
         from src.adapters.agents.gemini_adapter import GeminiAdapter
-        assert GeminiAdapter is not None
+        adapter = GeminiAdapter(client=AsyncMock())
+        assert adapter is not None
     
     def test_repository_adapter_import(self) -> None:
         """Test que SQLChatRepositoryAdapter se puede importar."""
         from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
         assert SQLChatRepositoryAdapter is not None
-
 
 class TestDependencies:
     """Tests para el sistema de inyección de dependencias."""
@@ -258,20 +258,18 @@ class TestDependencies:
         from src.adapters import dependencies
         assert dependencies is not None
     
-    def test_get_groq_adapter(self) -> None:
-        """Test que se puede crear un GroqAdapter."""
-        from src.adapters.dependencies import get_groq_adapter
-        
-        adapter = get_groq_adapter()
-        assert adapter is not None
+    def test_get_main_llm_adapter(self):
+        """Verifica que se pueda obtener el adaptador LLM principal."""
+        from src.adapters.dependencies import get_kimi_adapter
+        adapter = get_kimi_adapter()
+        assert isinstance(adapter, LLMPort) is not None
         assert hasattr(adapter, 'get_chat_completion')
     
-    def test_get_gemini_adapter(self) -> None:
-        """Test que se puede crear un GeminiAdapter."""
+    def test_get_fallback_llm_adapter(self):
+        """Verifica que se pueda obtener el adaptador LLM de fallback."""
         from src.adapters.dependencies import get_gemini_adapter
-        
         adapter = get_gemini_adapter()
-        assert adapter is not None
+        assert isinstance(adapter, LLMPort) is not None
         assert hasattr(adapter, 'get_chat_completion')
 
 

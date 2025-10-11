@@ -7,8 +7,8 @@ from src.adapters.tools.bear_python_tool import BearPythonTool, PythonSource
 
 @pytest.fixture
 def tool():
-    """BearPythonTool con API-Key dummy para tests."""
-    return BearPythonTool(api_key="test-key")
+    """BearPythonTool con API-Key y URL dummy para tests."""
+    return BearPythonTool(api_key="test-key", base_url="https://test.bear.api/search")
 
 
 @pytest.fixture
@@ -39,15 +39,16 @@ def mock_bear_response():
 @pytest.mark.asyncio
 async def test_search_python_bug_acepta_error_real(tool, mock_bear_response):
     """Buscar un traceback REAL debe traer resultados."""
-    with patch.object(tool.client, "get", return_value=AsyncMock()) as mock_get:
-        mock_get.return_value.json = AsyncMock(return_value=mock_bear_response)
-        mock_get.return_value.raise_for_status = AsyncMock()
+    with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+        mock_response = AsyncMock()
+        mock_response.json.return_value = mock_bear_response
+        mock_get.return_value = mock_response
 
         results = await tool.search_python_bug("ImportError: cannot import name 'x'")
 
-        assert len(results) >= 1
-        assert any("ImportError" in r.snippet for r in results)
-        assert all(r.url != "https://weather.com/montevideo" for r in results)  # clima filtrado
+        assert len(results) == 1
+        assert "ImportError" in results[0].snippet
+        assert "github.com" in results[0].url
 
 
 @pytest.mark.asyncio
@@ -68,19 +69,19 @@ async def test_search_python_bug_rechaza_query_general(tool):
 @pytest.mark.asyncio
 async def test_search_python_api_encuentra_ejemplos(tool):
     """Búsqueda de API específica debe traer ejemplos de uso."""
-    with patch.object(tool.client, "get", return_value=AsyncMock()) as mock_get:
-        mock_get.return_value.json = AsyncMock(
-            return_value={
-                "results": [
-                    {
-                        "title": "asyncio.create_task example",
-                        "url": "https://docs.python.org/3/library/asyncio-task.html",
-                        "snippet": "task = asyncio.create_task(coro())",
-                    }
-                ]
+    api_response = {
+        "results": [
+            {
+                "title": "asyncio.create_task example",
+                "url": "https://docs.python.org/3/library/asyncio-task.html",
+                "snippet": "task = asyncio.create_task(coro())",
             }
-        )
-        mock_get.return_value.raise_for_status = AsyncMock()
+        ]
+    }
+    with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+        mock_response = AsyncMock()
+        mock_response.json.return_value = api_response
+        mock_get.return_value = mock_response
 
         results = await tool.search_python_api("asyncio", "create_task")
 
@@ -95,20 +96,24 @@ async def test_filtro_de_domains(tool):
     raw = {
         "results": [
             {"title": "t1", "url": "https://docs.python.org/3/", "snippet": "def hello():"},
-            {"title": "t2", "url": "https://facebook.com/post", "snippet": "def hello():"},
-            {"title": "t3", "url": "https://realpython.com/", "snippet": "def hello():"},
+            {"title": "t2", "url": "https://facebook.com/post", "snippet": "not python related"},
+            {"title": "t3", "url": "https://realpython.com/", "snippet": "import asyncio"},
+            {"title": "t4", "url": "https://another-blog.com/post", "snippet": "def another_func():"},
         ]
     }
-    with patch.object(tool.client, "get", return_value=AsyncMock()) as mock_get:
-        mock_get.return_value.json = AsyncMock(return_value=raw)
-        mock_get.return_value.raise_for_status = AsyncMock()
+    with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+        mock_response = AsyncMock()
+        mock_response.json.return_value = raw
+        mock_get.return_value = mock_response
 
         results = await tool.search_python_best_practice("pep-8")
 
         urls = {r.url for r in results}
+        assert len(urls) == 2
         assert "https://docs.python.org/3/" in urls
         assert "https://realpython.com/" in urls
-        assert "https://facebook.com/post" not in urls  # filtrado
+        assert "https://facebook.com/post" not in urls
+        assert "https://another-blog.com/post" not in urls
 
 
 # --------------- Tests de activación (integración con ChatService) ---------------
@@ -217,19 +222,35 @@ def test_calculate_reliability_docs_python_maxima(tool):
 
 # --------------- Tests de manejo de errores ---------------
 @pytest.mark.asyncio
-async def test_api_error_retorna_vacio(tool):
-    """Si la API falla, debe retornar lista vacía sin excepciones."""
-    with patch.object(tool.client, "get", side_effect=Exception("API Error")):
+async def test_api_error_usa_fallback(tool):
+    """Si la API falla, debe usar el fallback y retornar resultados hardcodeados."""
+    with patch('httpx.AsyncClient.get', side_effect=Exception("API Error")):
         results = await tool.search_python_bug("test error")
-        assert results == []
+        assert len(results) > 0
+        assert "Python Official Documentation" in [r.title for r in results]
 
 
 @pytest.mark.asyncio
 async def test_empty_response_handling(tool):
     """Respuesta vacía debe manejarse correctamente."""
-    with patch.object(tool.client, "get", return_value=AsyncMock()) as mock_get:
-        mock_get.return_value.json = AsyncMock(return_value={"results": []})
-        mock_get.return_value.raise_for_status = AsyncMock()
+    with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+        mock_response = AsyncMock()
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
         
         results = await tool.search_python_best_practice("asyncio")
         assert results == []
+
+@pytest.mark.asyncio
+async def test_search_python_bug_acepta_error_real(tool, mock_bear_response):
+    """Buscar un traceback REAL debe traer resultados."""
+    with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+        mock_response = AsyncMock()
+        mock_response.json.return_value = mock_bear_response
+        mock_get.return_value = mock_response
+
+        results = await tool.search_python_bug("ImportError: cannot import name 'x'")
+
+        assert len(results) == 2 # docs.python.org y github.com
+        assert any("ImportError" in r.snippet for r in results)
+        assert all("weather.com" not in r.url for r in results)
