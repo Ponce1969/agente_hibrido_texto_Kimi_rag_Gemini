@@ -1,0 +1,53 @@
+name: Deploy to Orange Pi
+
+on:
+  push:
+    branches:
+      - main  # Se ejecuta cuando haces push a main
+
+jobs:
+  deploy:
+    name: Deploy to Production Server
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🚀 Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.ORANGEPI_HOST }}
+          username: ${{ secrets.ORANGEPI_USER }}
+          key: ${{ secrets.ORANGEPI_SSH_KEY }}
+          port: ${{ secrets.ORANGEPI_PORT }}
+          script: |
+            echo "🔄 Actualizando proyecto en Orange Pi..."
+            cd ${{ secrets.ORANGEPI_PROJECT_PATH }}
+            
+            # Hacer backup del .env
+            cp .env .env.backup
+            
+            # Pull de los cambios
+            git pull origin main
+            
+            # Restaurar .env (por si acaso)
+            cp .env.backup .env
+            
+            # Reiniciar servicios con Docker
+            docker compose down
+            docker compose up -d --build
+            
+            # Limpiar imágenes antiguas
+            docker image prune -f
+            
+            echo "✅ Deployment completado!"
+            
+      - name: 📊 Verificar estado
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.ORANGEPI_HOST }}
+          username: ${{ secrets.ORANGEPI_USER }}
+          key: ${{ secrets.ORANGEPI_SSH_KEY }}
+          port: ${{ secrets.ORANGEPI_PORT }}
+          script: |
+            cd ${{ secrets.ORANGEPI_PROJECT_PATH }}
+            docker compose ps
+            echo "🎉 Servicios activos en Orange Pi"
