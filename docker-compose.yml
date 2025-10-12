@@ -38,7 +38,7 @@ services:
     volumes:
       # Monta el código fuente para ver los cambios en la UI al momento
       - ./src:/app/src
-    command: streamlit run src/adapters/streamlit/Home.py --server.port 8501 --server.address 0.0.0.0
+    command: streamlit run src/adapters/streamlit/app.py --server.port 8501 --server.address 0.0.0.0
     depends_on:
       - backend
 
