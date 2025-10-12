@@ -38,6 +38,8 @@ services:
     volumes:
       # Monta el código fuente para ver los cambios en la UI al momento
       - ./src:/app/src
+      # Monta el mismo volumen de datos para acceder a metrics.db
+      - backend_data:/app/data
     command: streamlit run src/adapters/streamlit/app.py --server.port 8501 --server.address 0.0.0.0
     depends_on:
       - backend
