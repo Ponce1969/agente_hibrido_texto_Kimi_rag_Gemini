@@ -31,13 +31,8 @@ from .models.chat_models import (
     MessageRole
 )
 
-# Interfaces de repositorio
-from .repositories.chat_repository import (
-    ChatRepositoryInterface,
-    FileRepositoryInterface,
-    AgentRepositoryInterface,
-    AnalyticsRepositoryInterface
-)
+# Interfaces de repositorio (ahora en ports/)
+# Las interfaces están en domain/ports/ siguiendo arquitectura hexagonal
 
 # Servicios de dominio
 from .services.chat_domain_service import (
@@ -70,12 +65,6 @@ __all__ = [
     "FileDocument",
     "FileSection",
     "MessageRole",
-    
-    # Interfaces
-    "ChatRepositoryInterface",
-    "FileRepositoryInterface",
-    "AgentRepositoryInterface",
-    "AnalyticsRepositoryInterface",
     
     # Servicios
     "ChatDomainService",

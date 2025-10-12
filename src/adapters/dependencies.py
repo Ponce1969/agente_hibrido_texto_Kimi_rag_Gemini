@@ -22,10 +22,12 @@ from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
 from src.adapters.db.file_repository_adapter import SQLFileRepository
 from src.adapters.db.database import get_session
 from src.adapters.tools.bear_python_tool import BearPythonTool
+from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
 
 from src.application.services.chat_service import ChatServiceV2
 from src.application.services.embeddings_service import EmbeddingsServiceV2
 from src.application.services.file_processing_service import FileProcessingService
+from src.application.services.metrics_service import MetricsService
 from src.adapters.config.settings import settings
 
 # --- Caché para singletons ---
@@ -64,6 +66,12 @@ def get_python_search_tool() -> PythonSearchPort:
         base_url=settings.bear_base_url,
     )
 
+@lru_cache(maxsize=None)
+def get_metrics_service() -> MetricsService:
+    """Factory para el servicio de métricas (singleton)."""
+    metrics_repository = SQLModelMetricsRepository()
+    return MetricsService(repository=metrics_repository)
+
 # --- Servicios de Aplicación ---
 def get_embeddings_service() -> EmbeddingsServiceV2:
     return EmbeddingsServiceV2(embeddings_client=get_gemini_embeddings_adapter())
@@ -84,6 +92,7 @@ def get_chat_service(
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
+    metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> ChatServiceV2:
     return ChatServiceV2(
         llm_client=llm_client,
@@ -91,6 +100,7 @@ def get_chat_service(
         fallback_llm=fallback_llm,
         embeddings_service=embeddings_service,
         python_search=python_search,
+        metrics_service=metrics_service,
     )
 
 # --- Dependencias para Endpoints de FastAPI ---
@@ -101,6 +111,7 @@ def get_chat_service_dependency(
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
+    metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> ChatServiceV2:
     # Importante: NO llamar directamente a get_chat_service() aquí,
     # porque fuera del sistema de dependencias retornaría objetos Depends sin resolver.
@@ -110,6 +121,7 @@ def get_chat_service_dependency(
         fallback_llm=fallback_llm,
         embeddings_service=embeddings_service,
         python_search=python_search,
+        metrics_service=metrics_service,
     )
 
 def get_embeddings_service_dependency() -> EmbeddingsServiceV2:

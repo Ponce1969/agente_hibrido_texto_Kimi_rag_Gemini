@@ -15,17 +15,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import ChatSession as DBSession, ChatMessage as DBMessage
 from ..db.models import FileUpload as DBFile, FileSection as DBFileSection
 from ..config.settings import settings
-from ..domain import (
+from src.domain import (
     ChatSession,
     ChatMessage,
     FileDocument,
     FileSection,
-    MessageRole,
-    ChatRepositoryInterface,
-    FileRepositoryInterface,
-    AgentRepositoryInterface,
-    AnalyticsRepositoryInterface
+    MessageRole
 )
+from src.domain.ports.repository_port import ChatRepositoryPort
+from src.domain.ports.file_repository_port import FileRepositoryPort
+
+# Aliases temporales para compatibilidad
+ChatRepositoryInterface = ChatRepositoryPort
+FileRepositoryInterface = FileRepositoryPort
+AgentRepositoryInterface = Any  # TODO: Crear puerto si es necesario
+AnalyticsRepositoryInterface = Any  # TODO: Crear puerto si es necesario
 
 
 class SQLChatRepository(ChatRepositoryInterface):

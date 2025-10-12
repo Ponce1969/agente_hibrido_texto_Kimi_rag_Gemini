@@ -60,7 +60,10 @@ def render_dashboard():
     st.markdown("---")
     
     # Inicializar servicio
-    metrics_service = MetricsService()
+    from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
+    from src.application.services.metrics_service import MetricsService
+    metrics_repository = SQLModelMetricsRepository()
+    metrics_service = MetricsService(repository=metrics_repository)
     
     # Filtro de días
     col_filter1, col_filter2 = st.columns([3, 1])

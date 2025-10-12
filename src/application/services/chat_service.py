@@ -51,6 +51,7 @@ class ChatServiceV2:
         fallback_llm: LLMPort | None = None,
         embeddings_service: EmbeddingsServiceV2 | None = None,
         python_search: PythonSearchPort | None = None,
+        metrics_service: MetricsService | None = None,
     ) -> None:
         """
         Inicializa el servicio de chat.
@@ -61,6 +62,7 @@ class ChatServiceV2:
             fallback_llm: Cliente LLM de respaldo (ej: Gemini)
             embeddings_service: Servicio de embeddings para RAG (opcional)
             python_search: Servicio de búsqueda Python (opcional)
+            metrics_service: Servicio de métricas (opcional)
         """
         self.llm = llm_client
         self.repo = repository
@@ -68,8 +70,13 @@ class ChatServiceV2:
         self.embeddings = embeddings_service
         self.python_search = python_search
         
-        # Servicio de métricas
-        self.metrics = MetricsService()
+        # Servicio de métricas (inyectado o crear uno por defecto)
+        if metrics_service is None:
+            # Importación local para evitar dependencia circular
+            from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
+            self.metrics = MetricsService(repository=SQLModelMetricsRepository())
+        else:
+            self.metrics = metrics_service
         
         # Almacenar últimas fuentes usadas para feedback
         self.last_search_sources: list[PythonSource] = []

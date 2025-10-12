@@ -11,7 +11,7 @@ from datetime import datetime, UTC
 import uuid
 
 from ..models.chat_models import ChatSession, ChatMessage, MessageRole, FileDocument, FileSection
-from ..repositories.chat_repository import ChatRepositoryInterface
+from ..ports.repository_port import ChatRepositoryPort
 from ..exceptions.domain_exceptions import (
     ChatSessionNotFoundError,
     ChatSessionAlreadyExistsError,
@@ -29,7 +29,7 @@ from ..exceptions.domain_exceptions import (
 class ChatDomainService:
     """Servicio de dominio para lógica de chat."""
 
-    def __init__(self, chat_repository: ChatRepositoryInterface) -> None:
+    def __init__(self, chat_repository: ChatRepositoryPort) -> None:
         self.chat_repository = chat_repository
 
     async def create_new_session(self, user_id: str, session_name: Optional[str] = None) -> ChatSession:
