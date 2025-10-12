@@ -1,10 +1,15 @@
 """Endpoints para métricas y dashboard."""
 from fastapi import APIRouter, Query
 from typing import Dict, List
+
 from src.application.services.metrics_service import MetricsService
+from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
-metrics_service = MetricsService()
+
+# Inyección de dependencias
+metrics_repository = SQLModelMetricsRepository()
+metrics_service = MetricsService(repository=metrics_repository)
 
 
 @router.get("/summary")

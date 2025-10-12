@@ -6,43 +6,38 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      # Monta el código fuente para el desarrollo
       - ./src:/app/src
-      # Monta un volumen persistente para la base de datos SQLite
+      - ./gunicorn.conf.py:/app/gunicorn.conf.py
       - backend_data:/app/data
-      # Cache de modelos/transformers para evitar re-descargas (acelera equipos con pocos recursos)
       - models_cache:/root/.cache
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
+    command: gunicorn src.main:app --config gunicorn.conf.py
     env_file:
       - .env
     environment:
-      # Reduce el uso de hilos y paralelismo del tokenizador en CPU modesta
-      - TOKENIZERS_PARALLELISM=false
-      - OMP_NUM_THREADS=1
-      - INTRA_OP_PARALLELISM_THREADS=1
-      - INTER_OP_PARALLELISM_THREADS=1
+      - TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM:-false}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
+      - INTRA_OP_PARALLELISM_THREADS=${INTRA_OP_PARALLELISM_THREADS:-1}
+      - INTER_OP_PARALLELISM_THREADS=${INTER_OP_PARALLELISM_THREADS:-1}
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8501:8501"
-    # El servicio de Streamlit debe comunicarse con el backend usando el nombre del servicio de Docker.
-    # Esta variable de entorno es leída por la app de Streamlit.
+      - "${FRONTEND_PORT:-8501}:8501"
     environment:
-      - BACKEND_URL=http://backend:8000/api/v1
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000/api/v1}
       - PYTHONPATH=/app
     volumes:
-      # Monta el código fuente para ver los cambios en la UI al momento
       - ./src:/app/src
-      # Monta el mismo volumen de datos para acceder a metrics.db
       - backend_data:/app/data
     command: streamlit run src/adapters/streamlit/app.py --server.port 8501 --server.address 0.0.0.0
     depends_on:
       - backend
+    env_file:
+      - .env
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -52,7 +47,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT_EXTERNAL:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:

@@ -6,7 +6,108 @@ Scripts auxiliares para desarrollo, testing y deployment del proyecto.
 
 ## 📋 Scripts Disponibles
 
-### 🧹 Producción
+### 🚀 Deployment y Producción
+
+#### `start_dev.sh`
+Inicia el servidor en modo desarrollo con hot-reload.
+
+**Uso:**
+```bash
+./scripts/start_dev.sh
+```
+
+**Características:**
+- Uvicorn con hot-reload
+- 1 worker (single process)
+- Ideal para desarrollo local
+- Recarga automática al cambiar código
+
+---
+
+#### `start_prod.sh`
+Inicia el servidor en modo producción con Gunicorn.
+
+**Uso:**
+```bash
+./scripts/start_prod.sh
+```
+
+**Características:**
+- Gunicorn + Uvicorn workers
+- 4 workers (multi-process)
+- Gestión robusta de procesos
+- Auto-restart en crashes
+
+---
+
+#### `start_prod_systemd.sh`
+Script de inicio para el servicio systemd.
+
+**Uso:**
+```bash
+# Llamado automáticamente por systemd
+# No ejecutar manualmente
+```
+
+---
+
+#### `agente-hibrido.service`
+Archivo de configuración para systemd.
+
+**Instalación:**
+```bash
+sudo cp scripts/agente-hibrido.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable agente-hibrido
+sudo systemctl start agente-hibrido
+```
+
+**Comandos útiles:**
+```bash
+# Ver estado
+sudo systemctl status agente-hibrido
+
+# Ver logs
+sudo journalctl -u agente-hibrido -f
+
+# Reiniciar
+sudo systemctl restart agente-hibrido
+```
+
+---
+
+#### `deploy_orangepi.sh`
+Deploy automático en Orange Pi 5 Plus (Docker).
+
+**Uso:**
+```bash
+./scripts/deploy_orangepi.sh
+```
+
+**Acciones:**
+- Pull desde GitHub
+- Backup de `.env`
+- Rebuild de contenedores Docker
+- Health check automático
+
+---
+
+#### `deploy_orangepi_systemd.sh`
+Deploy automático en Orange Pi 5 Plus (Systemd).
+
+**Uso:**
+```bash
+./scripts/deploy_orangepi_systemd.sh
+```
+
+**Acciones:**
+- Pull desde GitHub
+- Backup de `.env`
+- Actualización de dependencias
+- Restart del servicio systemd
+- Health check automático
+
+---
 
 #### `cleanup_for_production.sh`
 Limpia el proyecto antes de deployment a producción.
@@ -93,6 +194,28 @@ uv run python scripts/cleanup_project.py
 - Backups obsoletos
 - Carpetas vacías
 - Archivos temporales
+
+---
+
+#### `find_duplicates.py`
+Encuentra archivos duplicados por contenido y nombres similares.
+
+**Uso:**
+```bash
+uv run python scripts/find_duplicates.py
+```
+
+**Detecta:**
+- Archivos duplicados por contenido (mismo hash MD5)
+- Archivos con nombres similares
+- Calcula espacio desperdiciado
+- Sugiere qué archivos revisar/eliminar
+
+**Características:**
+- Ignora automáticamente cachés y node_modules
+- Solo analiza archivos de código (.py, .md, .json, etc.)
+- Agrupa duplicados por hash
+- Muestra espacio que se puede recuperar
 
 ---
 

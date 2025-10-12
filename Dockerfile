@@ -27,11 +27,13 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Copiar el código fuente de la aplicación
 COPY src/ ./src
+COPY gunicorn.conf.py ./
 COPY .env ./
 
 # Exponer los puertos para FastAPI y Streamlit
 EXPOSE 8000
 EXPOSE 8501
 
-# Por defecto, inicia el backend. El comando puede ser sobreescrito en docker-compose
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Por defecto, inicia el backend con Gunicorn (producción)
+# El comando puede ser sobreescrito en docker-compose
+CMD ["gunicorn", "src.main:app", "--config", "gunicorn.conf.py"]

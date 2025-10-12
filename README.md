@@ -26,7 +26,30 @@
 
 ---
 
-## 🎯 **Inicio Rápido (Versión Resumida)**
+## ⚡ **Inicio Rápido**
+
+```bash
+# 1. Clonar y configurar
+git clone <tu-repo>
+cd agentes_Front_Bac
+cp .env.example .env
+nano .env  # Configurar tus API keys
+
+# 2. Iniciar con Docker (Recomendado)
+docker compose up --build
+
+# Acceder:
+# - Frontend: http://localhost:8501
+# - Backend: http://localhost:8000/docs
+```
+
+**📖 Documentación:**
+- **[`GUIA_RAPIDA.md`](./GUIA_RAPIDA.md)** - Inicio rápido y comandos ⚡
+- **[`DEPLOY_MANUAL.md`](./DEPLOY_MANUAL.md)** - Deploy manual en Orange Pi 🍊
+
+---
+
+## 🎯 **Configuración Completa**
 
 ### **1. Clonar y Configurar**
 ```bash
@@ -35,23 +58,15 @@ cd agentes_Front_Bac
 ```
 
 ### **2. Configurar Variables de Entorno**
-Crear archivo `.env` con las API keys:
-```env
-# API Keys (requeridas)
-GROQ_API_KEY=your_groq_key_here
-GEMINI_API_KEY=your_gemini_key_here
-BEAR_API_KEY=your_bear_key_here
+```bash
+# Copiar archivo de ejemplo
+cp .env.example .env
 
-# Base de datos
-DB_BACKEND=sqlite  # o postgresql
-DATABASE_URL=sqlite:///./data/chat_history.db
-DATABASE_URL_PG=postgresql+psycopg2://user:pass@postgres:5432/dbname
-
-# Configuración de embeddings (optimizado para bajos recursos)
-EMBEDDING_BATCH_SIZE=2
-EMBEDDING_CHUNK_SIZE=600
-EMBEDDING_CHUNK_OVERLAP=100
+# Editar con tus credenciales
+nano .env
 ```
+
+Ver `.env.example` para todas las opciones disponibles.
 
 ### **3. Lanzar con Docker**
 ```bash
@@ -59,9 +74,8 @@ docker compose up --build
 ```
 
 ### **4. Acceso**
-- **Frontend (Streamlit)**: http://localhost:8501
-- **Backend API**: http://localhost:8000
-- **Documentación API**: http://localhost:8000/docs
+- **Frontend**: http://localhost:8501
+- **Backend API**: http://localhost:8000/docs
 - **Health Check**: http://localhost:8000/health
 
 ---

@@ -11,7 +11,7 @@ from .llm_port import LLMPort
 from .repository_port import ChatRepositoryPort
 from .file_repository_port import FileRepositoryPort
 from .embeddings_port import EmbeddingsPort
-from .python_search_port import PythonSearchPort
+from .python_search_port import PythonSearchPort, PythonSource
 
 __all__ = [
     "LLMPort",
@@ -19,4 +19,5 @@ __all__ = [
     "EmbeddingsPort",
     "FileRepositoryPort",
     "PythonSearchPort",
+    "PythonSource",
 ]
