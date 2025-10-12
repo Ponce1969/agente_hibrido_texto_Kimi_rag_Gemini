@@ -12,7 +12,13 @@ class MetricsService:
     
     def __init__(self):
         """Inicializar servicio de métricas."""
+        self._ensure_data_directory()
         self._ensure_tables()
+    
+    def _ensure_data_directory(self):
+        """Asegurar que el directorio data/ existe."""
+        import os
+        os.makedirs("data", exist_ok=True)
     
     def _ensure_tables(self):
         """Crear tablas si no existen."""
