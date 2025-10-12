@@ -10,12 +10,14 @@ from src.application.services.metrics_service import MetricsService
 st.set_page_config(
     page_title="📊 Dashboard de Métricas",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Título principal
 st.title("📊 Dashboard de Métricas")
 st.markdown("**Análisis de uso de agentes IA y sistema RAG**")
+st.markdown("---")
 
 # Inicializar servicio
 metrics_service = MetricsService()

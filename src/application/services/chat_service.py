@@ -335,9 +335,24 @@ class ChatServiceV2:
         # 9. Registrar métricas
         response_time = time.time() - start_time
         try:
-            # Extraer tokens de la respuesta (si están disponibles)
-            prompt_tokens = tokens.get('prompt_tokens', 0) if isinstance(tokens, dict) else 0
-            completion_tokens = tokens.get('completion_tokens', 0) if isinstance(tokens, dict) else 0
+            # Extraer tokens de la respuesta (manejar diferentes formatos)
+            prompt_tokens = 0
+            completion_tokens = 0
+            
+            if isinstance(tokens, dict):
+                # Formato diccionario (algunos LLMs)
+                prompt_tokens = tokens.get('prompt_tokens', 0)
+                completion_tokens = tokens.get('completion_tokens', 0)
+            elif isinstance(tokens, int):
+                # Formato entero (Groq retorna total)
+                # Estimar: ~70% completion, 30% prompt
+                completion_tokens = int(tokens * 0.7)
+                prompt_tokens = tokens - completion_tokens
+            elif tokens is None:
+                # Gemini no retorna tokens, estimar basado en longitud
+                prompt_tokens = len(user_message) // 4  # ~4 chars por token
+                completion_tokens = len(response) // 4
+                logger.debug(f"⚠️ Tokens estimados (LLM no los proporciona): {prompt_tokens + completion_tokens}")
             
             self.metrics.record_agent_usage(
                 session_id=session_id,
@@ -352,9 +367,10 @@ class ChatServiceV2:
                 used_bear_search=used_bear,
                 bear_sources_count=bear_sources_count
             )
-            logger.info(f"📊 Métricas registradas: {prompt_tokens + completion_tokens} tokens, {response_time:.2f}s")
+            logger.info(f"📊 Métricas registradas: {prompt_tokens + completion_tokens} tokens, {response_time:.2f}s, modelo={model_used}")
         except Exception as e:
             logger.error(f"❌ Error registrando métricas: {e}")
+            logger.error(traceback.format_exc())
         
         return response
     
