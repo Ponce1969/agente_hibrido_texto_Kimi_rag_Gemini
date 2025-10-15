@@ -171,51 +171,58 @@ def test_hash_password():
 ## 📋 Checklist de Implementación
 
 ### Fase 1: Rate Limiting ⏱️
-- [ ] Instalar SlowAPI
-- [ ] Configurar limitador en `main.py`
-- [ ] Decorar `/chat` (10/min)
-- [ ] Decorar `/embeddings/index` (5/min)
-- [ ] Eximir `/health`, `/docs`
-- [ ] Tests de 429
-- [ ] Documentar en README
+- [x] Instalar SlowAPI
+- [x] Configurar limitador en `main.py`
+- [x] Decorar `/chat` (10/min)
+- [x] Decorar `/embeddings/index` (5/min)
+- [x] Eximir `/health`, `/docs`
+- [x] Tests de 429
+- [x] Documentar en README
 
 ### Fase 2: Argon2 🔐
-- [ ] Instalar argon2-cffi
-- [ ] Crear `PasswordService`
-- [ ] Crear modelo `User`
-- [ ] Endpoint `/register`
-- [ ] Endpoint `/login`
-- [ ] Tests de hashing
-- [ ] Migración desde Bcrypt (si aplica)
+- [x] Instalar argon2-cffi
+- [x] Crear `PasswordService` (con arquitectura hexagonal)
+- [x] Crear modelo `User`
+- [x] Endpoint `/register`
+- [x] Endpoint `/login`
+- [x] Tests de hashing
+- [x] Arquitectura hexagonal implementada
 
-### Fase 3: JWT (Futuro) 🎫
-- [ ] Instalar python-jose
-- [ ] Crear `JWTService`
-- [ ] Generación de tokens
-- [ ] Validación de tokens
-- [ ] Middleware de auth
+### Fase 3: JWT 🎫
+- [x] Instalar python-jose
+- [x] Crear `JWTService` (JWTTokenService con arquitectura hexagonal)
+- [x] Generación de tokens
+- [x] Validación de tokens
+- [ ] Middleware de auth (próximo paso recomendado)
 
-### Fase 4: Headers (Futuro) 🛡️
-- [ ] Configurar CORS
-- [ ] Security headers
-- [ ] HTTPS redirect
+### Fase 4: Headers 🛡️
+- [x] Configurar CORS (mejorado con dominios específicos)
+- [ ] Security headers adicionales (CSP, X-Frame-Options)
+- [ ] HTTPS redirect (Cloudflare Tunnel ya maneja esto)
 - [ ] Trusted hosts
 
 ---
 
 ## 📊 Prioridades
 
-1. **Crítico (Implementar Ya):**
-   - ✅ Rate limiting en `/chat`
+1. **✅ Crítico (COMPLETADO):**
+   - ✅ Rate limiting en `/chat` y `/embeddings/index`
    - ✅ Argon2 para contraseñas
+   - ✅ JWT authentication
+   - ✅ CORS mejorado
+   - ✅ Endpoints de registro/login
+   - ✅ Tests de seguridad
 
 2. **Alto (Próxima Sprint):**
-   - JWT authentication
-   - Security headers
+   - [ ] Middleware de autenticación para proteger endpoints
+   - [ ] Security headers adicionales (CSP, X-Frame-Options)
+   - [ ] Implementar roles y permisos (RBAC)
 
 3. **Medio (Backlog):**
-   - Audit logging
-   - Input sanitization
+   - [ ] Audit logging de eventos de seguridad
+   - [ ] Input sanitization avanzado
+   - [ ] 2FA (autenticación de dos factores)
+   - [ ] Rate limiting por usuario autenticado
 
 ---
 
@@ -228,5 +235,26 @@ def test_hash_password():
 
 ---
 
+## ✅ Estado de Implementación
+
+**Fases 1-3: COMPLETADAS** (2025-10-13)
+
+Todas las funcionalidades críticas de seguridad han sido implementadas siguiendo **arquitectura hexagonal**:
+
+- ✅ Rate Limiting con SlowAPI
+- ✅ Hashing Argon2 con puertos e implementaciones
+- ✅ JWT con arquitectura desacoplada
+- ✅ Endpoints de autenticación funcionales
+- ✅ Tests automatizados
+- ✅ Documentación completa
+
+**Documentos relacionados:**
+- `SECURITY_IMPLEMENTATION.md` - Guía detallada de implementación
+- `SECURITY_SUMMARY.md` - Resumen ejecutivo
+- `tests/test_security.py` - Suite de tests
+
+---
+
 **Documento creado:** 2025-10-12  
-**Próxima revisión:** Al implementar Fase 1
+**Última actualización:** 2025-10-13  
+**Estado:** ✅ Fases críticas completadas

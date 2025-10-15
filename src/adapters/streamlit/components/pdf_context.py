@@ -177,12 +177,19 @@ class PDFContextManager:
         if "usar_pdf_contexto" not in st.session_state:
             st.session_state.usar_pdf_contexto = False
         
+        # Guardar valor anterior para detectar cambios
+        previous_value = st.session_state.usar_pdf_contexto
+        
         # Toggle más visible con explicación (sin value hardcodeado)
         use_rag = st.toggle(
             "**Activar Búsqueda Inteligente en PDF**", 
             key="usar_pdf_contexto",
             help="Cuando está activado, el asistente buscará información en el PDF seleccionado usando IA (Gemini 2.5)"
         )
+        
+        # Detectar cambio y forzar rerun para actualizar el mensaje del chat
+        if use_rag != previous_value:
+            st.rerun()
         
         # Mostrar estado claramente
         if use_rag:

@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(None, description="API key para Gemini (Google AI Studio)")
     bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
     
+    # --- Seguridad y Autenticación ---
+    jwt_secret_key: str = Field(
+        ...,
+        description="Clave secreta para firmar tokens JWT. DEBE ser única y segura en producción."
+    )
+    jwt_expire_minutes: int = Field(
+        60,
+        description="Tiempo de expiración de tokens JWT en minutos (default: 60 = 1 hora)"
+    )
+    
     # --- Modelo LLM ---
     groq_model_name: str = Field(
         "moonshotai/kimi-k2-instruct-0905",

@@ -202,6 +202,10 @@ def main():
         # - use_context = False: Chat normal con Kimi-K2 (file_id=None)
         # - use_context = True: RAG con Gemini (file_id=X)
         final_file_id = file_id if (use_context and file_id) else None
+        
+        # Debug: mostrar valores actuales
+        st.sidebar.caption(f"🔍 Debug: use_context={use_context}, file_id={file_id}, final_file_id={final_file_id}")
+        
         chat_interface.render_chat_section(agent_mode, final_file_id)
         
         # Footer

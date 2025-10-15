@@ -28,7 +28,11 @@ from src.application.services.chat_service import ChatServiceV2
 from src.application.services.embeddings_service import EmbeddingsServiceV2
 from src.application.services.file_processing_service import FileProcessingService
 from src.application.services.metrics_service import MetricsService
+from src.application.services.auth_service import AuthService
 from src.adapters.config.settings import settings
+from src.adapters.security.argon2_hasher import Argon2PasswordHasher
+from src.adapters.security.jwt_token_service import JWTTokenService
+from src.adapters.db.user_repository import SQLModelUserRepository
 
 # --- Caché para singletons ---
 @lru_cache(maxsize=None)
@@ -136,4 +140,36 @@ def get_file_processing_service_dependency(
         file_repo, 
         embeddings_service,
         max_pdf_size_mb=settings.file_max_pdf_size_mb
+    )
+
+# --- Servicios de Autenticación ---
+
+@lru_cache(maxsize=None)
+def get_password_hasher() -> Argon2PasswordHasher:
+    """Factory para el hasher de contraseñas (singleton)."""
+    return Argon2PasswordHasher()
+
+@lru_cache(maxsize=None)
+def get_token_service() -> JWTTokenService:
+    """Factory para el servicio de tokens (singleton)."""
+    return JWTTokenService(
+        secret_key=settings.jwt_secret_key,
+        algorithm="HS256",
+        expire_minutes=settings.jwt_expire_minutes
+    )
+
+def get_user_repository(session: Session = Depends(get_session)) -> SQLModelUserRepository:
+    """Factory para el repositorio de usuarios."""
+    return SQLModelUserRepository(session)
+
+def get_auth_service(
+    password_hasher: Argon2PasswordHasher = Depends(get_password_hasher),
+    token_service: JWTTokenService = Depends(get_token_service),
+    user_repository: SQLModelUserRepository = Depends(get_user_repository),
+) -> AuthService:
+    """Factory para el servicio de autenticación."""
+    return AuthService(
+        password_hasher=password_hasher,
+        token_service=token_service,
+        user_repository=user_repository
     )

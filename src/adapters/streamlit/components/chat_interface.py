@@ -55,12 +55,6 @@ class ChatInterface:
     
     def handle_user_input(self, agent_mode: AgentMode, file_id: Optional[int] = None) -> None:
         """Maneja la entrada del usuario y genera respuesta."""
-        # Mostrar modo de operación actual
-        if file_id:
-            st.info(f"🔍 **Modo RAG activado** - Usando contexto del PDF (file_id={file_id}) con Gemini 2.5")
-        else:
-            st.success(f"💬 **Modo Chat Normal** - Conversación con Kimi-K2 (sin contexto PDF)")
-        
         if prompt := st.chat_input("Escribe tu consulta aquí..."):
             # Mostrar mensaje del usuario
             with st.chat_message("user"):
@@ -222,6 +216,13 @@ class ChatInterface:
     def render_chat_section(self, agent_mode: AgentMode, file_id: Optional[int] = None) -> None:
         """Renderiza la sección completa de chat."""
         st.header("💬 Chat")
+        
+        # Mostrar modo de operación actual (SIEMPRE VISIBLE)
+        # Crear un placeholder que se actualiza dinámicamente
+        if file_id:
+            st.info(f"✅ **Modo RAG Activo** - El asistente consultará el PDF con Gemini 2.5 (file_id={file_id})")
+        else:
+            st.success(f"💬 **Modo Chat Normal** - Conversación con Kimi-K2 (sin contexto PDF)")
         
         # Historial de mensajes
         self.render_chat_history()

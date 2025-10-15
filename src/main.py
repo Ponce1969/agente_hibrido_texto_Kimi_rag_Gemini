@@ -1,5 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from src.adapters.api.endpoints import chat
 from src.adapters.api.endpoints import files
@@ -7,6 +11,7 @@ from src.adapters.api.endpoints import pg
 from src.adapters.api.endpoints import embeddings
 from src.adapters.api.endpoints import chat_bear
 from src.adapters.api.endpoints import metrics
+from src.adapters.api.endpoints import auth
 from src.adapters.db.database import create_db_and_tables
 
 
@@ -20,6 +25,9 @@ async def lifespan(app: FastAPI):
     print("Apagando aplicación...")
 
 
+# Configurar Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="Asistente de Aprendizaje de Python con IA",
     description="Una API para interactuar con un agente de IA especializado en Python.",
@@ -27,7 +35,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Agregar Rate Limiter al estado de la app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Configurar CORS mejorado
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",  # Streamlit local (desarrollo)
+        "http://localhost:3000",  # React local (si aplica)
+        "https://app3.loquinto.com",  # Frontend Streamlit en producción (Cloudflare Tunnel)
+        "https://api3.loquinto.com",  # Backend FastAPI en producción (Cloudflare Tunnel)
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+)
+
 # Incluir los routers de los endpoints
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
 app.include_router(files.router, prefix="/api/v1", tags=["Files"])
 app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"]) 

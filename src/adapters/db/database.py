@@ -4,6 +4,7 @@ from sqlalchemy.pool import StaticPool
 
 from src.adapters.config.settings import settings
 from src.adapters.db.file_models import FileUpload, FileSection  # noqa: F401
+from src.domain.models.user import User  # noqa: F401
 import os
 
 # Importar modelos de embeddings solo si usamos PostgreSQL para RAG

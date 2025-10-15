@@ -4,14 +4,19 @@ Endpoints de la API para gestionar el chat.
 MIGRADO: Usa ChatServiceV2 con arquitectura hexagonal
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.adapters.agents.prompts import AgentMode
 from src.adapters.dependencies import get_chat_service_dependency
 from src.application.services.chat_service import ChatServiceV2
 
 logger = logging.getLogger(__name__)
+
+# Configurar limiter para este router
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
 
@@ -52,20 +57,22 @@ def create_new_session(
 
 
 @router.post("/chat", response_model=ChatResponse)
+@limiter.limit("10/minute")  # Límite: 10 requests por minuto (consume tokens LLM)
 async def handle_chat(
-    request: ChatRequest,
+    request: Request,
+    chat_request: ChatRequest,
     service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Maneja un mensaje de chat y devuelve la respuesta de la IA."""
     try:
-        logger.info(f"Request de chat recibida para sesión {request.session_id}")
-        logger.debug(f"Detalles del request: {request.model_dump_json()}")
+        logger.info(f"Request de chat recibida para sesión {chat_request.session_id}")
+        logger.debug(f"Detalles del request: {chat_request.model_dump_json()}")
 
         reply = await service.handle_message(
-            session_id=str(request.session_id),
-            user_message=request.message,
-            agent_mode=request.mode.value,
-            file_id=request.file_id,
+            session_id=str(chat_request.session_id),
+            user_message=chat_request.message,
+            agent_mode=chat_request.mode.value,
+            file_id=chat_request.file_id,
         )
         return ChatResponse(reply=reply)
     except Exception as e:

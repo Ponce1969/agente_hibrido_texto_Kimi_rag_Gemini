@@ -2,7 +2,9 @@
 Endpoints para la gestión de embeddings, refactorizados para seguir la arquitectura hexagonal.
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.application.services.embeddings_service import EmbeddingsServiceV2
 from src.application.services.file_processing_service import FileProcessingService
@@ -12,6 +14,10 @@ from src.adapters.dependencies import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Configurar limiter
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter()
 
 
@@ -20,7 +26,9 @@ router = APIRouter()
     tags=["Embeddings"], 
     summary="Indexa el contenido de un archivo procesado"
 )
+@limiter.limit("5/minute")  # Límite: 5 requests por minuto (operación muy costosa)
 async def embeddings_index(
+    request: Request,
     file_id: int,
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
