@@ -6,13 +6,14 @@ from __future__ import annotations
 import io
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 from pathvalidate import sanitize_filename
 
 from pypdf import PdfReader
 
 from src.domain.models.file_models import FileStatus, FileDocument
+from src.adapters.config.settings import settings
 
 if TYPE_CHECKING:
     from src.domain.ports.file_repository_port import FileRepositoryPort
