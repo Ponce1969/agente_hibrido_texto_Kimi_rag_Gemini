@@ -66,8 +66,9 @@ class FileSection:
     
     def __post_init__(self) -> None:
         """Validación después de inicialización."""
-        if not self.text.strip():
-            raise ValueError("El texto no puede estar vacío")
+        # Permitir texto vacío temporalmente (será filtrado en el procesamiento)
+        # if not self.text.strip():
+        #     raise ValueError("El texto no puede estar vacío")
         
         if self.chunk_index < 0:
             raise ValueError("El índice del chunk debe ser no negativo")
