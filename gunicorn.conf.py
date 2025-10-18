@@ -10,7 +10,8 @@ backlog = 2048
 
 # Workers
 # Fórmula: (2 × CPU) + 1, pero ajustado por carga de LLMs
-workers = int(os.getenv("GUNICORN_WORKERS", "4"))
+# IMPORTANTE: Usar 1 worker para evitar race conditions en DB initialization
+workers = int(os.getenv("GUNICORN_WORKERS", "1"))
 worker_class = "uvicorn.workers.UvicornWorker"
 worker_connections = 1000
 max_requests = 1000  # Reciclar workers después de N requests
