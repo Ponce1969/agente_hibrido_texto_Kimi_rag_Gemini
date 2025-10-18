@@ -110,7 +110,7 @@ class FileProcessingService:
             raise ValueError(f"No se pudo extraer texto de ninguna sección del archivo {file_id}")
 
         try:
-            self.file_repo.update_file_status(file_id, FileStatus.INDEXING)
+            self.file_repo.update_file_status(file_id, FileStatus.PROCESSING)
             indexed_count = await self.embeddings_service.index_document(file_doc, valid_sections)
             self.file_repo.update_file_status(file_id, FileStatus.INDEXED)
             logger.info(f"Se indexaron {indexed_count} chunks para el archivo {file_id}")
