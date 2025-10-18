@@ -71,7 +71,7 @@ app.include_router(files.router, prefix="/api/v1", tags=["Files"])
 app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"]) 
 app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"])
 app.include_router(chat_bear.router, prefix="/api/v1", tags=["Bear Search"])
-app.include_router(metrics.router, tags=["Metrics"])  # Métricas de tokens 
+app.include_router(metrics.router, prefix="/api/v1")  # Métricas de tokens (tag definido en el router) 
 
 # Endpoint de health check
 @app.get("/health", tags=["Monitoring"])
