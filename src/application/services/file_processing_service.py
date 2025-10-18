@@ -13,6 +13,7 @@ from pathvalidate import sanitize_filename
 from pypdf import PdfReader
 
 from src.domain.models.file_models import FileStatus, FileDocument
+from src.adapters.config.settings import settings
 
 if TYPE_CHECKING:
     from src.domain.ports.file_repository_port import FileRepositoryPort
