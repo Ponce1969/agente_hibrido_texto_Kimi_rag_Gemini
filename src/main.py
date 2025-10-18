@@ -70,7 +70,7 @@ app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
 app.include_router(files.router, prefix="/api/v1", tags=["Files"])
 app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"]) 
 app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"])
-app.include_router(chat_bear.router, prefix="/api/v1", tags=["Bear Search"])
+app.include_router(chat_bear.router, prefix="/api/v1")  # Bear Search (tag definido en el router)
 app.include_router(metrics.router, prefix="/api/v1")  # Métricas de tokens (tag definido en el router) 
 
 # Endpoint de health check
