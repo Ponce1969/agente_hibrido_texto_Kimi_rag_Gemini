@@ -20,6 +20,16 @@ async def lifespan(app: FastAPI):
     # Al iniciar la aplicación
     print("Iniciando aplicación y creando tablas de la base de datos...")
     create_db_and_tables()
+    
+    # Crear tabla de embeddings (pgvector)
+    try:
+        from src.adapters.db.embeddings_repository import EmbeddingsRepository
+        embeddings_repo = EmbeddingsRepository()
+        embeddings_repo.ensure_schema()
+        print("✅ Tabla document_chunks creada/verificada con pgvector")
+    except Exception as e:
+        print(f"⚠️ No se pudo crear tabla de embeddings: {e}")
+    
     yield
     # Al apagar la aplicación (si se necesita limpieza)
     print("Apagando aplicación...")
