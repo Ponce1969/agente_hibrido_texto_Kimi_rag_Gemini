@@ -8,6 +8,7 @@ class AgentMetrics(SQLModel, table=True):
     """Métricas de uso de agentes IA."""
     
     __tablename__ = "agent_metrics"
+    __table_args__ = {'extend_existing': True}
     
     id: Optional[int] = Field(default=None, primary_key=True)
     
@@ -65,6 +66,7 @@ class DailyMetricsSummary(SQLModel, table=True):
     """Resumen diario de métricas agregadas."""
     
     __tablename__ = "daily_metrics_summary"
+    __table_args__ = {'extend_existing': True}
     
     id: Optional[int] = Field(default=None, primary_key=True)
     
@@ -102,6 +104,7 @@ class ErrorLog(SQLModel, table=True):
     """Log de errores del sistema."""
     
     __tablename__ = "error_logs"
+    __table_args__ = {'extend_existing': True}
     
     id: Optional[int] = Field(default=None, primary_key=True)
     
