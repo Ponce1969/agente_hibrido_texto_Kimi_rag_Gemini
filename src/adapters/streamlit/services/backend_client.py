@@ -229,7 +229,7 @@ class BackendClient:
     
     def trigger_indexing(self, file_id: int) -> Dict[str, Any]:
         """Dispara la indexación de embeddings."""
-        response = httpx.post(f"{self.base_url}/files/index/{file_id}", timeout=10)
+        response = httpx.post(f"{self.base_url}/embeddings/index/{file_id}", timeout=10)
         response.raise_for_status()
         return response.json()
     
