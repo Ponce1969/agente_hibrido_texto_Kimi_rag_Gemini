@@ -73,6 +73,7 @@ async def handle_chat(
             user_message=chat_request.message,
             agent_mode=chat_request.mode.value,
             file_id=chat_request.file_id,
+            use_internet=True,  # Habilitar búsqueda web con Brave
         )
         return ChatResponse(reply=reply)
     except Exception as e:

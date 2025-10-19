@@ -1,11 +1,25 @@
 from typing import Generator
 from sqlmodel import Session, SQLModel, create_engine
 from sqlalchemy.pool import StaticPool
+import re
 
 from src.adapters.config.settings import settings
 from src.adapters.db.file_models import FileUpload, FileSection  # noqa: F401
 from src.domain.models.user import User  # noqa: F401
 import os
+
+
+def sanitize_db_url(url: str) -> str:
+    """
+    Oculta credenciales en URLs de base de datos para logs seguros.
+    
+    Ejemplo:
+        postgresql://user:password@host:5432/db
+        -> postgresql://user:***@host:5432/db
+    """
+    # Patrón para capturar: scheme://user:password@host:port/db
+    pattern = r"(://[^:]+:)([^@]+)(@)"
+    return re.sub(pattern, r"\1***\3", url)
 
 # Importar modelos de embeddings solo si usamos PostgreSQL para RAG
 # (Los embeddings van en PostgreSQL, no en SQLite)
@@ -49,7 +63,9 @@ def create_db_and_tables():
     # Crear todas las tablas usando SQLModel
     SQLModel.metadata.create_all(engine)
     
-    print(f"✅ Tablas creadas/verificadas en: {settings.effective_database_url}")
+    # Log seguro sin exponer credenciales
+    safe_url = sanitize_db_url(settings.effective_database_url)
+    print(f"✅ Tablas creadas/verificadas en: {safe_url}")
     
     # Ajustes específicos según el backend
     if settings.db_backend == "postgresql":
