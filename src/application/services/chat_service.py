@@ -484,8 +484,13 @@ class ChatServiceV2:
             re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE)
         )
 
-        return (kimis_uncertain or search_mentioned or traceback_mentioned or 
-                architecture_mentioned or api_question or version_question) and not is_general_query
+        # MODO ESTRICTO: Solo buscar cuando Kimi está inseguro O hay un error crítico
+        # Comentar la línea de abajo para modo más agresivo
+        return (kimis_uncertain or traceback_mentioned) and not is_general_query
+        
+        # MODO AGRESIVO (comentado): Busca también en preguntas de API, versiones, etc.
+        # return (kimis_uncertain or search_mentioned or traceback_mentioned or 
+        #         architecture_mentioned or api_question or version_question) and not is_general_query
 
     async def _search_python_sources(self, user_message: str) -> list[PythonSource]:
         """Ejecuta búsqueda Bear para cualquier pregunta Python válida."""
