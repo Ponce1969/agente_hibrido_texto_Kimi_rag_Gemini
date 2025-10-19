@@ -483,10 +483,14 @@ class ChatServiceV2:
         version_question = bool(
             re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE)
         )
+        
+        # Detectar preguntas sobre Python 3.13+ (post-2023, fuera del conocimiento de Kimi)
+        recent_python_version = bool(
+            re.search(r"\bpython\s*3\.(1[3-9]|[2-9]\d)", user_message, re.IGNORECASE)  # 3.13, 3.14, 3.15...
+        )
 
-        # MODO ESTRICTO: Solo buscar cuando Kimi está inseguro O hay un error crítico
-        # Comentar la línea de abajo para modo más agresivo
-        return (kimis_uncertain or traceback_mentioned) and not is_general_query
+        # MODO ESTRICTO: Solo buscar cuando Kimi está inseguro O hay un error crítico O pregunta por Python 3.13+
+        return (kimis_uncertain or traceback_mentioned or recent_python_version) and not is_general_query
         
         # MODO AGRESIVO (comentado): Busca también en preguntas de API, versiones, etc.
         # return (kimis_uncertain or search_mentioned or traceback_mentioned or 
