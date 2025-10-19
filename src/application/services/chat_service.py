@@ -298,7 +298,9 @@ class ChatServiceV2:
         
         # 7. Verificar si necesita búsqueda en Internet
         if use_internet and self.python_search and not rag_context:
+            logger.info(f"🔍 Verificando si necesita búsqueda web...")
             if self._should_search_internet(user_message, initial_response):
+                logger.info(f"✅ Kimi solicitó búsqueda web. Activando Brave Search...")
                 sources = await self._search_python_sources(user_message)
                 if sources:
                     used_bear = True  # Marcar uso de Bear API
@@ -306,17 +308,28 @@ class ChatServiceV2:
                     self.last_search_sources = sources
                     context = self._build_internet_context(sources)
                     
+                    logger.info(f"📚 Contexto web construido: {len(context)} caracteres de {len(sources)} fuentes")
+                    
                     # Re-llamar al LLM con contexto adicional
+                    # IMPORTANTE: Incluir el contexto DENTRO del system prompt para que Kimi lo vea como conocimiento base
                     enriched_prompt = (
                         f"{system_prompt}\n\n"
-                        f"🔍 Información adicional de fuentes Python confiables:\n"
-                        f"{context}\n\n"
-                        f"Usa esta información para proporcionar una respuesta más precisa y actualizada."
+                        f"--- INFORMACIÓN ACTUALIZADA DE INTERNET ---\n"
+                        f"{context}\n"
+                        f"--- FIN DE INFORMACIÓN ACTUALIZADA ---\n\n"
+                        f"INSTRUCCIÓN CRÍTICA: Acabas de recibir información actualizada de fuentes confiables. "
+                        f"Usa ESTA información para responder la pregunta del usuario. "
+                        f"NO digas que no tienes información. "
+                        f"Proporciona una respuesta completa basándote en el contexto actualizado que acabas de recibir."
                     )
+                    
+                    logger.info(f"🤖 Re-llamando a Kimi con contexto web...")
+                    # Usar solo el último mensaje del usuario, sin el historial que incluye "no sé"
+                    fresh_history = [{"role": "user", "content": user_message}]
                     
                     response, tokens = await self._get_llm_response(
                         system_prompt=enriched_prompt,
-                        history=history,
+                        history=fresh_history,  # Historial limpio sin la respuesta "no sé"
                         max_tokens=max_tokens,
                         temperature=temperature,
                         session_id=session_id,
@@ -324,6 +337,7 @@ class ChatServiceV2:
                         use_fallback_on_error=use_fallback_on_error,
                         has_rag=bool(rag_context),
                     )
+                    logger.info(f"✅ Respuesta con contexto web generada: {len(response)} caracteres")
                 else:
                     response = initial_response
             else:
