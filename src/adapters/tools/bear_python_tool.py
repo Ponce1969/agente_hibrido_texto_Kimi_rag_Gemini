@@ -35,10 +35,16 @@ PYTHON_DOMAINS = {
 class BearPythonTool(PythonSearchPort):
     """Herramienta de búsqueda Python con filtros inteligentes y caché."""
 
-    def __init__(self, api_key: str, base_url: str = "https://api.bearblog.dev/search"):
+    def __init__(self, api_key: str, base_url: str = "https://api.search.brave.com/res/v1/web/search"):
         self.api_key = api_key
         self.base_url = base_url
-        self.client = httpx.AsyncClient(timeout=10)
+        self.client = httpx.AsyncClient(
+            timeout=30,
+            headers={
+                "Accept": "application/json",
+                "X-Subscription-Token": api_key
+            }
+        )
         
         # Configuración de caché
         from src.adapters.config.settings import settings
@@ -232,7 +238,7 @@ class BearPythonTool(PythonSearchPort):
         return await self._execute_search(query, 8, "best_practice")
 
     async def _execute_search(self, query: str, num_results: int, search_type: str) -> List[PythonSource]:
-        """Ejecuta la búsqueda y la filtra."""
+        """Ejecuta la búsqueda con Brave API y la filtra."""
         cache_key = self._get_cache_key(query, search_type)
         cached = self._get_from_cache(cache_key)
         if cached is not None:
@@ -240,24 +246,35 @@ class BearPythonTool(PythonSearchPort):
 
         params = {
             "q": query,
-            "limit": num_results * 2,  # Pedir más para tener margen de filtrado
+            "count": num_results * 2,  # Brave usa 'count' en lugar de 'limit'
         }
-        headers = {"X-API-Key": self.api_key}
 
         try:
-            print(f"🔍 Bear API: Búsqueda para '{query}'")
-            response = await self.client.get(self.base_url, params=params, headers=headers)
+            print(f"🔍 Brave Search API: Búsqueda para '{query}'")
+            response = await self.client.get(self.base_url, params=params)
             response.raise_for_status()
-            data = await response.json()
+            data = response.json()
             
-            raw_results = data.get("results", [])
-            filtered_results = self._filter_sources(raw_results)
+            # Brave devuelve resultados en data['web']['results']
+            raw_results = data.get("web", {}).get("results", [])
+            
+            # Adaptar formato de Brave a nuestro formato
+            adapted_results = []
+            for result in raw_results:
+                adapted_results.append({
+                    "url": result.get("url", ""),
+                    "title": result.get("title", ""),
+                    "snippet": result.get("description", ""),
+                })
+            
+            filtered_results = self._filter_sources(adapted_results)
             
             self._set_cache(cache_key, filtered_results)
+            print(f"✅ Brave Search: {len(filtered_results)} resultados filtrados")
             return filtered_results
 
         except Exception as e:
-            print(f"⚠️ Bear API Error: {e}")
+            print(f"⚠️ Brave Search API Error: {e}")
             return await self._fallback_search(query, num_results)
 
     def clear_cache(self) -> None:

@@ -118,12 +118,12 @@ class Settings(BaseSettings):
         description="Solapamiento entre chunks de texto (caracteres) - reducido para bajos recursos",
     )
 
-    # --- Búsqueda Python (Bear API) ---
+    # --- Búsqueda Python (Brave Search API) ---
     bear_base_url: str = Field(
-        "https://api.github.com/search/repositories",
-        description="URL base de la API de GitHub para búsquedas (alternativa a Bear)",
+        "https://api.search.brave.com/res/v1/web/search",
+        description="URL base de Brave Search API para búsquedas web especializadas",
     )
-    bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
+    bear_api_key: str = Field(..., description="API key para Brave Search API (búsqueda Python)")
     bear_search_enabled: bool = Field(
         True,
         description="Habilitar/deshabilitar búsqueda con Bear API",
