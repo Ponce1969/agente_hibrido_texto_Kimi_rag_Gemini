@@ -90,6 +90,7 @@ class BearPythonTool(PythonSearchPort):
         
         Elimina:
         - Prefijos del modelo (kimi-k2:, kimi:)
+        - Frases meta ("puedes buscar", "busca información sobre")
         - Keywords agregadas automáticamente (best practices, pep-8 guide)
         - Signos de interrogación redundantes
         - Espacios extras
@@ -99,7 +100,15 @@ class BearPythonTool(PythonSearchPort):
         # 1. Eliminar prefijos del modelo
         cleaned = re.sub(r"^(kimi-k2[:\?]\s*|kimi[:\?]\s*)", "", cleaned, flags=re.IGNORECASE)
         
-        # 2. Eliminar keywords agregadas automáticamente
+        # 2. Eliminar frases meta que no aportan a la búsqueda
+        cleaned = re.sub(
+            r"\b(puedes buscar|busca información sobre|busca sobre|buscar información|buscar sobre|información sobre)\b\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE
+        )
+        
+        # 3. Eliminar keywords agregadas automáticamente
         cleaned = re.sub(
             r"\b(best practices pep-8 guide|pep-8 guide|best practices guide)\b",
             "",
@@ -107,10 +116,13 @@ class BearPythonTool(PythonSearchPort):
             flags=re.IGNORECASE
         )
         
-        # 3. Eliminar signos de interrogación iniciales/finales redundantes
+        # 4. Eliminar "esto" o "eso" al inicio (quedan después de limpiar frases meta)
+        cleaned = re.sub(r"^(esto|eso)\s+", "", cleaned, flags=re.IGNORECASE)
+        
+        # 5. Eliminar signos de interrogación iniciales/finales redundantes
         cleaned = re.sub(r"^[¿?]+|[¿?]+$", "", cleaned)
         
-        # 4. Limpiar espacios múltiples
+        # 6. Limpiar espacios múltiples
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
         
         return cleaned if cleaned else raw_query  # Fallback si queda vacío
@@ -195,23 +207,28 @@ class BearPythonTool(PythonSearchPort):
         return any(kw in query.lower() for kw in general_kw)
 
     def _filter_sources(self, raw_results: List[dict]) -> List[PythonSource]:
-        """Aplica whitelist y score de confiabilidad."""
+        """Aplica whitelist y score de confiabilidad (modo relajado)."""
         filtered = []
         for result in raw_results:
             url = result.get("url", "")
             snippet = result.get("snippet", "")
             domain = url.split("/")[2] if "/" in url else ""
 
-            # Filtrar por dominio
-            if domain not in PYTHON_DOMAINS:
-                continue
-
-            # Filtrar por contenido Python
-            if not self._is_python_related(snippet):
-                continue
+            # Filtrar por dominio (si está en whitelist, priorizar)
+            in_whitelist = domain in PYTHON_DOMAINS
+            
+            # Si NO está en whitelist, verificar si es Python-related
+            if not in_whitelist:
+                # Permitir si el snippet menciona Python claramente
+                if not self._is_python_related(snippet):
+                    continue
 
             # Calcular confiabilidad
             reliability = self._calculate_reliability(domain, url)
+            
+            # Si está en whitelist, aumentar confiabilidad
+            if in_whitelist:
+                reliability = min(10, reliability + 2)
 
             filtered.append(
                 PythonSource(
@@ -222,7 +239,10 @@ class BearPythonTool(PythonSearchPort):
                     reliability=reliability,
                 )
             )
-        return filtered[:5]  # max 5 fuentes
+        
+        # Ordenar por confiabilidad y retornar top 5
+        filtered.sort(key=lambda x: x.reliability, reverse=True)
+        return filtered[:5]
 
     def _calculate_reliability(self, domain: str, url: str) -> int:
         """Calcula score de confiabilidad basado en dominio y URL."""
