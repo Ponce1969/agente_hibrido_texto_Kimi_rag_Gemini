@@ -103,10 +103,14 @@ class PDFContextManager:
                         # Mostrar estado simple basado en el status del archivo
                         if file.status == "ready":
                             st.success("Listo", icon="✅")
+                        elif file.status == "indexed":
+                            st.success("Indexado", icon="✅")
                         elif file.status == "processing":
                             st.warning("Procesando", icon="⏳")
-                        else:
+                        elif file.status == "error":
                             st.error("Error", icon="❌")
+                        else:
+                            st.info(f"{file.status}", icon="ℹ️")
                     
                     with col3:
                         # Verificar si este PDF está seleccionado
