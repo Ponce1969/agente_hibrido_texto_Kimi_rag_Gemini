@@ -81,12 +81,14 @@ class PDFContextManager:
                     
                     with col1:
                         # Icono según el estado
-                        if file.status == "ready":
+                        if file.status in ("ready", "indexed"):
                             icon = "✅"
                         elif file.status == "processing":
                             icon = "⏳"
-                        else:
+                        elif file.status == "error":
                             icon = "❌"
+                        else:
+                            icon = "ℹ️"  # Estado desconocido
                         
                         st.write(f"{icon} **{file.filename}**")
                         
