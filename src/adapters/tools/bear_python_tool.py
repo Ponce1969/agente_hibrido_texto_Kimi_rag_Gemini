@@ -84,6 +84,37 @@ class BearPythonTool(PythonSearchPort):
         print(f"🎯 Bear API: Caché set para {key}")
 
     # ---------- helpers ----------
+    def _clean_query(self, raw_query: str) -> str:
+        """
+        Limpia la query antes de enviarla a Brave Search.
+        
+        Elimina:
+        - Prefijos del modelo (kimi-k2:, kimi:)
+        - Keywords agregadas automáticamente (best practices, pep-8 guide)
+        - Signos de interrogación redundantes
+        - Espacios extras
+        """
+        cleaned = raw_query
+        
+        # 1. Eliminar prefijos del modelo
+        cleaned = re.sub(r"^(kimi-k2[:\?]\s*|kimi[:\?]\s*)", "", cleaned, flags=re.IGNORECASE)
+        
+        # 2. Eliminar keywords agregadas automáticamente
+        cleaned = re.sub(
+            r"\b(best practices pep-8 guide|pep-8 guide|best practices guide)\b",
+            "",
+            cleaned,
+            flags=re.IGNORECASE
+        )
+        
+        # 3. Eliminar signos de interrogación iniciales/finales redundantes
+        cleaned = re.sub(r"^[¿?]+|[¿?]+$", "", cleaned)
+        
+        # 4. Limpiar espacios múltiples
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        
+        return cleaned if cleaned else raw_query  # Fallback si queda vacío
+    
     def _is_python_related(self, text: str) -> bool:
         """Detecta si el contenido es sobre Python."""
         python_kw = {
@@ -234,7 +265,20 @@ class BearPythonTool(PythonSearchPort):
 
     async def search_python_best_practice(self, topic: str) -> List[PythonSource]:
         """Busca best practices y guías oficiales con caché."""
-        query = f"python {topic} best practices pep-8 guide"
+        # Limpiar la query antes de agregar keywords
+        clean_topic = self._clean_query(topic)
+        
+        # Log para debugging
+        if clean_topic != topic:
+            print(f"🧹 Query limpiada: '{topic}' → '{clean_topic}'")
+        
+        # Solo agregar keywords si la query es corta (< 50 chars)
+        if len(clean_topic) < 50:
+            query = f"python {clean_topic} best practices"
+        else:
+            # Query larga: ya es específica, no agregar ruido
+            query = f"python {clean_topic}"
+        
         return await self._execute_search(query, 8, "best_practice")
 
     async def _execute_search(self, query: str, num_results: int, search_type: str) -> List[PythonSource]:
