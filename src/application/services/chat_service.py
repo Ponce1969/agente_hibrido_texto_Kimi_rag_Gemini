@@ -391,6 +391,15 @@ class ChatServiceV2:
         Returns:
             System prompt
         """
+        # Instrucción común sobre limitaciones de conocimiento
+        knowledge_cutoff = (
+            "\n\n**IMPORTANTE:** Tu conocimiento tiene un corte en octubre de 2023. "
+            "Si te preguntan sobre versiones de Python 3.13+, librerías lanzadas después de 2023, "
+            "o cualquier información que no tengas, debes decir explícitamente: "
+            "'No tengo información sobre [tema] ya que mi conocimiento termina en octubre 2023. "
+            "Puedo buscar información actualizada en internet si lo necesitas.'"
+        )
+        
         # Prompts básicos por modo
         prompts = {
             "architect": (
@@ -398,30 +407,35 @@ class ChatServiceV2:
                 "Produces código mantenible siguiendo arquitectura hexagonal, SOLID y Clean Code. "
                 "Usas FastAPI, SQLModel, Pydantic v2, pytest. "
                 "Siempre incluyes type hints completos y docstrings."
+                + knowledge_cutoff
             ),
             "code_generator": (
                 "Eres un ingeniero de código especializado en Python 3.12+. "
                 "Generas soluciones eficientes y modernas. "
                 "Usas FastAPI, SQLAlchemy, asyncio. "
                 "Código listo para producción con tests."
+                + knowledge_cutoff
             ),
             "security_analyst": (
                 "Eres un auditor de seguridad especializado en Python. "
                 "Identificas vulnerabilidades OWASP Top 10. "
                 "Usas bandit, semgrep, pip-audit. "
                 "Proporcionas mitigaciones claras."
+                + knowledge_cutoff
             ),
             "database_specialist": (
                 "Eres un especialista en bases de datos PostgreSQL 15+. "
                 "Optimizas esquemas y queries. "
                 "Usas EXPLAIN ANALYZE, índices, RLS. "
                 "SQL optimizado con justificación."
+                + knowledge_cutoff
             ),
             "refactor_engineer": (
                 "Eres un ingeniero de refactoring especializado en Python 3.12+. "
                 "Reduces complejidad sin cambiar comportamiento. "
                 "Aplicas SOLID, patrones de refactoring. "
                 "Código más limpio y mantenible."
+                + knowledge_cutoff
             ),
         }
         
@@ -483,14 +497,10 @@ class ChatServiceV2:
         version_question = bool(
             re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE)
         )
-        
-        # Detectar preguntas sobre Python 3.13+ (post-2023, fuera del conocimiento de Kimi)
-        recent_python_version = bool(
-            re.search(r"\bpython\s*3\.(1[3-9]|[2-9]\d)", user_message, re.IGNORECASE)  # 3.13, 3.14, 3.15...
-        )
 
-        # MODO ESTRICTO: Solo buscar cuando Kimi está inseguro O hay un error crítico O pregunta por Python 3.13+
-        return (kimis_uncertain or traceback_mentioned or recent_python_version) and not is_general_query
+        # MODO ULTRA ESTRICTO: SOLO buscar cuando Kimi explícitamente dice "no sé" O hay un error crítico
+        # Priorizar la respuesta de Kimi sobre cualquier heurística de la pregunta
+        return (kimis_uncertain or traceback_mentioned) and not is_general_query
         
         # MODO AGRESIVO (comentado): Busca también en preguntas de API, versiones, etc.
         # return (kimis_uncertain or search_mentioned or traceback_mentioned or 
