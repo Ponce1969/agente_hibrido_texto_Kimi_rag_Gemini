@@ -324,12 +324,11 @@ class ChatServiceV2:
                     )
                     
                     logger.info(f"🤖 Re-llamando a Kimi con contexto web...")
-                    # Usar solo el último mensaje del usuario, sin el historial que incluye "no sé"
-                    fresh_history = [{"role": "user", "content": user_message}]
                     
+                    # Usar el historial completo (el LLM verá el contexto actualizado en el system prompt)
                     response, tokens = await self._get_llm_response(
                         system_prompt=enriched_prompt,
-                        history=fresh_history,  # Historial limpio sin la respuesta "no sé"
+                        history=history,  # Usar historial completo
                         max_tokens=max_tokens,
                         temperature=temperature,
                         session_id=session_id,
