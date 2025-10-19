@@ -391,13 +391,19 @@ class ChatServiceV2:
         Returns:
             System prompt
         """
-        # Instrucción común sobre limitaciones de conocimiento
+        # Instrucción común sobre limitaciones de conocimiento (específica para Kimi-K2)
         knowledge_cutoff = (
-            "\n\n**IMPORTANTE:** Tu conocimiento tiene un corte en octubre de 2023. "
-            "Si te preguntan sobre versiones de Python 3.13+, librerías lanzadas después de 2023, "
-            "o cualquier información que no tengas, debes decir explícitamente: "
-            "'No tengo información sobre [tema] ya que mi conocimiento termina en octubre 2023. "
-            "Puedo buscar información actualizada en internet si lo necesitas.'"
+            "\n\n**REGLAS DE CONOCIMIENTO (Kimi-K2):**\n"
+            "Tu conocimiento base cubre hasta Python 3.13 (inclusive) y enero 2025.\n\n"
+            "Si la pregunta menciona explícitamente:\n"
+            "- Python 3.14, 3.15, 'dev', 'main branch', 'nightly'\n"
+            "- PEP draft (no aprobados)\n"
+            "- Librerías sin soporte estable\n"
+            "- Eventos/releases posteriores a enero 2025\n\n"
+            "DEBES responder LITERALMENTE:\n"
+            "\"No tengo información suficiente sobre eso en mi conocimiento base. "
+            "Voy a buscarlo en internet.\"\n\n"
+            "En cualquier otro caso, responde normalmente con tu conocimiento de Python."
         )
         
         # Prompts básicos por modo
@@ -443,8 +449,13 @@ class ChatServiceV2:
     
     def _should_search_internet(self, user_message: str, kimi_response: str) -> bool:
         """Detecta si Kimi no pudo resolver el problema y necesita búsqueda."""
+        # Señal PRINCIPAL: La frase literal que Kimi debe decir según el prompt
+        if "voy a buscarlo en internet" in kimi_response.lower():
+            return True
+        
         # Señales AMPLIADAS de que Kimi no tiene la información
         uncertainty_signals = [
+            r"\bno tengo información suficiente\b",  # Frase del prompt
             r"\bno (tengo|cuento con|puedo proporcionar)\b",
             r"\b(desconozco|ignoro|no estoy seguro)\b",
             r"\bno puedo\b",
@@ -457,7 +468,7 @@ class ChatServiceV2:
             r"\bno tengo acceso\b",
             r"\bno puedo ver\b",
             r"\bno disponible\b",
-            r"\bcomo modelo de lenguaje\b",  # ¡CLAVE! Detecta cuando dice "como modelo"
+            r"\bcomo modelo de lenguaje\b",
             r"\bno tengo la capacidad\b",
             r"\bno puedo navegar\b",
             r"\bno puedo acceder\b",
