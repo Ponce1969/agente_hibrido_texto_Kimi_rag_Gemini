@@ -14,7 +14,7 @@ import httpx
 from sqlmodel import Session
 
 from src.domain.ports import (ChatRepositoryPort, EmbeddingsPort, LLMPort, 
-                              FileRepositoryPort, PythonSearchPort)
+                              FileRepositoryPort, PythonSearchPort, GuardianPort)
                               
 from src.adapters.agents.gemini_adapter import GeminiAdapter
 from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapter
@@ -22,6 +22,7 @@ from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
 from src.adapters.db.file_repository_adapter import SQLFileRepository
 from src.adapters.db.database import get_session
 from src.adapters.tools.bear_python_tool import BearPythonTool
+from src.adapters.tools.qwen_guardian_client import QwenGuardianClient
 from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
 
 from src.application.services.chat_service import ChatServiceV2
@@ -29,6 +30,7 @@ from src.application.services.embeddings_service import EmbeddingsServiceV2
 from src.application.services.file_processing_service import FileProcessingService
 from src.application.services.metrics_service import MetricsService
 from src.application.services.auth_service import AuthService
+from src.application.services.guardian_service import GuardianService
 from src.adapters.config.settings import settings
 from src.adapters.security.argon2_hasher import Argon2PasswordHasher
 from src.adapters.security.jwt_token_service import JWTTokenService
@@ -172,4 +174,27 @@ def get_auth_service(
         password_hasher=password_hasher,
         token_service=token_service,
         user_repository=user_repository
+    )
+
+# --- Guardian ---
+@lru_cache(maxsize=1)
+def get_guardian_client() -> GuardianPort:
+    """Factory para el cliente Guardian (Qwen2.5-1.5B)."""
+    return QwenGuardianClient(
+        api_url=settings.guardian_api_url,
+        api_key=settings.guardian_api_key,
+        timeout=settings.guardian_timeout,
+        enabled=settings.guardian_enabled
+    )
+
+@lru_cache(maxsize=1)
+def get_guardian_service(
+    guardian_client: GuardianPort = Depends(get_guardian_client)
+) -> GuardianService:
+    """Factory para el servicio Guardian con caché y rate limiting."""
+    return GuardianService(
+        guardian_client=guardian_client,
+        max_calls_per_minute=settings.guardian_max_calls_per_minute,
+        cache_ttl=settings.guardian_cache_ttl,
+        min_length_to_check=settings.guardian_min_length
     )

@@ -12,7 +12,11 @@ from src.adapters.api.endpoints import embeddings
 from src.adapters.api.endpoints import chat_bear
 from src.adapters.api.endpoints import metrics
 from src.adapters.api.endpoints import auth
+from src.adapters.api.endpoints import guardian
 from src.adapters.db.database import create_db_and_tables
+from src.adapters.api.middleware.guardian_middleware import GuardianMiddleware
+from src.adapters.dependencies import get_guardian_service
+from src.adapters.config.settings import settings
 
 
 @asynccontextmanager
@@ -49,6 +53,17 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# 🛡️ Agregar Guardian Middleware (ANTES de CORS)
+if settings.guardian_enabled:
+    print("🛡️ Guardian de seguridad activado")
+    app.add_middleware(
+        GuardianMiddleware,
+        guardian_service=get_guardian_service(),
+        enabled=settings.guardian_enabled
+    )
+else:
+    print("⚠️ Guardian de seguridad desactivado")
+
 # Configurar CORS mejorado
 app.add_middleware(
     CORSMiddleware,
@@ -71,7 +86,8 @@ app.include_router(files.router, prefix="/api/v1", tags=["Files"])
 app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"]) 
 app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"])
 app.include_router(chat_bear.router, prefix="/api/v1")  # Bear Search (tag definido en el router)
-app.include_router(metrics.router, prefix="/api/v1")  # Métricas de tokens (tag definido en el router) 
+app.include_router(metrics.router, prefix="/api/v1")  # Métricas de tokens (tag definido en el router)
+app.include_router(guardian.router, prefix="/api/v1")  # Guardian de seguridad 
 
 # Endpoint de health check
 @app.get("/health", tags=["Monitoring"])

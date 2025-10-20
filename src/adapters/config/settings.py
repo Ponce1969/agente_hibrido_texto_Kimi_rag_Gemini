@@ -136,6 +136,36 @@ class Settings(BaseSettings):
         5,
         description="Máximo de resultados de búsqueda a incluir en el contexto",
     )
+    
+    # --- Guardian (Qwen2.5-1.5B Security) ---
+    guardian_enabled: bool = Field(
+        True,
+        description="Habilitar/deshabilitar Guardian de seguridad",
+    )
+    guardian_api_url: str = Field(
+        "https://api.siliconflow.cn/v1/chat/completions",
+        description="URL de la API de HuggingFace/SiliconFlow para Qwen Guardian",
+    )
+    guardian_api_key: str = Field(
+        ...,
+        description="API key para HuggingFace/SiliconFlow (Qwen Guardian)",
+    )
+    guardian_timeout: int = Field(
+        10,
+        description="Timeout en segundos para llamadas al Guardian",
+    )
+    guardian_max_calls_per_minute: int = Field(
+        10,
+        description="Máximo de llamadas al Guardian por minuto (rate limiting)",
+    )
+    guardian_cache_ttl: int = Field(
+        3600,
+        description="Tiempo de vida del caché del Guardian en segundos (1 hora)",
+    )
+    guardian_min_length: int = Field(
+        20,
+        description="Longitud mínima de mensaje para activar Guardian (caracteres)",
+    )
 
 
 # Instancia única para ser importada en otros módulos

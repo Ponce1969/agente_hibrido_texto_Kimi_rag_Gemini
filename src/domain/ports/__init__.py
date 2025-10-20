@@ -12,6 +12,7 @@ from .repository_port import ChatRepositoryPort
 from .file_repository_port import FileRepositoryPort
 from .embeddings_port import EmbeddingsPort
 from .python_search_port import PythonSearchPort, PythonSource
+from .guardian_port import GuardianPort, GuardianResult, ThreatLevel
 
 __all__ = [
     "LLMPort",
@@ -20,4 +21,7 @@ __all__ = [
     "FileRepositoryPort",
     "PythonSearchPort",
     "PythonSource",
+    "GuardianPort",
+    "GuardianResult",
+    "ThreatLevel",
 ]
