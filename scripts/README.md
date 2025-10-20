@@ -1,19 +1,29 @@
 # 🛠️ Scripts de Utilidad
 
-Scripts auxiliares para desarrollo, testing y deployment del proyecto.
+> **Colección organizada de scripts para desarrollo, testing, deployment y mantenimiento del proyecto.**
 
 ---
 
-## 📋 Scripts Disponibles
+## 📂 **Estructura**
 
-### 🚀 Deployment y Producción
+```
+scripts/
+├── deployment/      # 🚀 Scripts de deployment y producción
+├── database/        # 💾 Scripts de base de datos
+├── development/     # 🏗️ Scripts de desarrollo
+├── testing/         # 🧪 Scripts de testing
+└── utils/           # 🔧 Utilidades generales
+```
 
-#### `start_dev.sh`
+---
+
+## 🚀 **Deployment**
+
+### **`deployment/start_dev.sh`**
 Inicia el servidor en modo desarrollo con hot-reload.
 
-**Uso:**
 ```bash
-./scripts/start_dev.sh
+./scripts/deployment/start_dev.sh
 ```
 
 **Características:**
@@ -24,12 +34,11 @@ Inicia el servidor en modo desarrollo con hot-reload.
 
 ---
 
-#### `start_prod.sh`
+### **`deployment/start_prod.sh`**
 Inicia el servidor en modo producción con Gunicorn.
 
-**Uso:**
 ```bash
-./scripts/start_prod.sh
+./scripts/deployment/start_prod.sh
 ```
 
 **Características:**
@@ -40,137 +49,101 @@ Inicia el servidor en modo producción con Gunicorn.
 
 ---
 
-#### `start_prod_systemd.sh`
-Script de inicio para el servicio systemd.
-
-**Uso:**
-```bash
-# Llamado automáticamente por systemd
-# No ejecutar manualmente
-```
-
----
-
-#### `agente-hibrido.service`
-Archivo de configuración para systemd.
-
-**Instalación:**
-```bash
-sudo cp scripts/agente-hibrido.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable agente-hibrido
-sudo systemctl start agente-hibrido
-```
-
-**Comandos útiles:**
-```bash
-# Ver estado
-sudo systemctl status agente-hibrido
-
-# Ver logs
-sudo journalctl -u agente-hibrido -f
-
-# Reiniciar
-sudo systemctl restart agente-hibrido
-```
-
----
-
-#### `deploy_orangepi.sh`
-Deploy automático en Orange Pi 5 Plus (Docker).
-
-**Uso:**
-```bash
-./scripts/deploy_orangepi.sh
-```
-
-**Acciones:**
-- Pull desde GitHub
-- Backup de `.env`
-- Rebuild de contenedores Docker
-- Health check automático
-
----
-
-#### `deploy_orangepi_systemd.sh`
-Deploy automático en Orange Pi 5 Plus (Systemd).
-
-**Uso:**
-```bash
-./scripts/deploy_orangepi_systemd.sh
-```
-
-**Acciones:**
-- Pull desde GitHub
-- Backup de `.env`
-- Actualización de dependencias
-- Restart del servicio systemd
-- Health check automático
-
----
-
-#### `cleanup_for_production.sh`
+### **`deployment/cleanup_for_production.sh`**
 Limpia el proyecto antes de deployment a producción.
 
-**Uso:**
 ```bash
-bash scripts/cleanup_for_production.sh
+bash scripts/deployment/cleanup_for_production.sh
 ```
 
 **Acciones:**
-- Elimina cachés de Python (`__pycache__`, `.pytest_cache`, `.mypy_cache`)
+- Elimina cachés de Python (`__pycache__`, `.pytest_cache`)
 - Organiza archivos de desarrollo
-- Verifica configuración de seguridad (`.env` no en Git)
+- Verifica configuración de seguridad
 - Muestra resumen de limpieza
 
 ---
 
-#### `clear_error_message.py`
-Limpia mensajes de error en archivos indexados con status "ready".
+## 💾 **Base de Datos**
 
-**Uso:**
+### **`database/check_db_tables.sh`**
+Verifica las tablas de la base de datos.
+
 ```bash
-# Dentro del contenedor Docker
-docker exec agentes_front_bac-backend-1 python -c "
-from sqlmodel import Session, select
-from src.adapters.db.database import engine
-from src.adapters.db.file_models import FileUpload
-from datetime import datetime, UTC
+bash scripts/database/check_db_tables.sh
+```
 
-with Session(engine) as session:
-    statement = select(FileUpload).where(
-        FileUpload.status.in_(['ready', 'indexed']),
-        FileUpload.error_message.isnot(None)
-    )
-    files = session.exec(statement).all()
-    
-    for file in files:
-        file.error_message = None
-        file.updated_at = datetime.now(UTC)
-        session.add(file)
-    
-    session.commit()
-    print(f'✅ Limpiados {len(files)} archivo(s)')
-"
+**Verifica:**
+- Tablas existentes
+- Estructura de columnas
+- Índices
+- Relaciones
+
+---
+
+### **`database/verify_tables.sql`**
+Script SQL para verificar la estructura de tablas.
+
+```bash
+psql -U user -d db -f scripts/database/verify_tables.sql
 ```
 
 ---
 
-### 🏗️ Desarrollo
+### **`database/clean_empty_sessions.py`**
+Limpia sesiones vacías de la base de datos.
 
-#### `check_hexagonal_architecture.py`
-Verifica que el proyecto respete los principios de arquitectura hexagonal.
+```bash
+uv run python scripts/database/clean_empty_sessions.py
+```
+
+**Acciones:**
+- Elimina sesiones sin mensajes
+- Libera espacio en BD
+- Mantiene integridad referencial
+
+---
+
+### **`database/clear_error_message.py`**
+Limpia mensajes de error en archivos indexados.
+
+```bash
+uv run python scripts/database/clear_error_message.py
+```
 
 **Uso:**
+- Limpia error_message de archivos con status "ready" o "indexed"
+- Actualiza timestamp de modificación
+
+---
+
+### **`database/migrate_embeddings_dimension.py`**
+Migra embeddings de una dimensión a otra.
+
 ```bash
-uv run python scripts/check_hexagonal_architecture.py
+uv run python scripts/database/migrate_embeddings_dimension.py
+```
+
+**Casos de uso:**
+- Cambiar de modelo de embeddings
+- Actualizar dimensiones (384 → 768)
+- Reindexar documentos
+
+---
+
+## 🏗️ **Desarrollo**
+
+### **`development/check_hexagonal_architecture.py`**
+Verifica que el proyecto respete los principios de arquitectura hexagonal.
+
+```bash
+uv run python scripts/development/check_hexagonal_architecture.py
 ```
 
 **Verifica:**
-- ✅ Pureza del dominio (no importa adapters/infrastructure)
-- ✅ Dirección de dependencias (Application no importa Adapters)
-- ✅ Ubicación de puertos (deben estar en `domain/ports/`)
-- ✅ Ubicación de modelos (deben estar en `domain/models/`)
+- ✅ Pureza del dominio (no importa adapters)
+- ✅ Dirección de dependencias correcta
+- ✅ Ubicación de puertos en `domain/ports/`
 - ✅ Fuga de frameworks (FastAPI, SQLModel solo en adapters)
 
 **Salida:**
@@ -180,12 +153,26 @@ uv run python scripts/check_hexagonal_architecture.py
 
 ---
 
-#### `cleanup_project.py`
+### **`development/analyze_architecture.py`**
+Analiza la arquitectura del proyecto y genera reportes.
+
+```bash
+uv run python scripts/development/analyze_architecture.py
+```
+
+**Genera:**
+- Métricas de complejidad
+- Dependencias entre módulos
+- Violaciones de SOLID
+- Recomendaciones de refactoring
+
+---
+
+### **`development/cleanup_project.py`**
 Analiza el proyecto buscando archivos a limpiar.
 
-**Uso:**
 ```bash
-uv run python scripts/cleanup_project.py
+uv run python scripts/development/cleanup_project.py
 ```
 
 **Identifica:**
@@ -197,12 +184,11 @@ uv run python scripts/cleanup_project.py
 
 ---
 
-#### `find_duplicates.py`
+### **`development/find_duplicates.py`**
 Encuentra archivos duplicados por contenido y nombres similares.
 
-**Uso:**
 ```bash
-uv run python scripts/find_duplicates.py
+uv run python scripts/development/find_duplicates.py
 ```
 
 **Detecta:**
@@ -211,19 +197,108 @@ uv run python scripts/find_duplicates.py
 - Calcula espacio desperdiciado
 - Sugiere qué archivos revisar/eliminar
 
-**Características:**
-- Ignora automáticamente cachés y node_modules
-- Solo analiza archivos de código (.py, .md, .json, etc.)
-- Agrupa duplicados por hash
-- Muestra espacio que se puede recuperar
+---
+
+### **`development/check_dependencies.py`**
+Verifica las dependencias del proyecto.
+
+```bash
+uv run python scripts/development/check_dependencies.py
+```
+
+**Verifica:**
+- Dependencias instaladas
+- Versiones compatibles
+- Dependencias faltantes
+- Dependencias obsoletas
 
 ---
 
-## 📊 Integración con CI/CD
+## 🧪 **Testing**
 
-### GitHub Actions
+### **`testing/test_rag.py`**
+Prueba el sistema RAG con consultas de ejemplo.
 
-Puedes integrar estos scripts en tu pipeline de CI/CD:
+```bash
+uv run python scripts/testing/test_rag.py
+```
+
+**Prueba:**
+- Indexación de documentos
+- Búsqueda semántica
+- Generación de respuestas
+- Performance de embeddings
+
+---
+
+### **`testing/debug_rag_flow.py`**
+Debuggea el flujo completo del sistema RAG.
+
+```bash
+uv run python scripts/testing/debug_rag_flow.py
+```
+
+**Muestra:**
+- Paso a paso del flujo RAG
+- Embeddings generados
+- Chunks recuperados
+- Contexto enviado al LLM
+- Respuesta final
+
+---
+
+### **`testing/demo_token_savings.py`**
+Demuestra el ahorro de tokens con el sistema de caché.
+
+```bash
+uv run python scripts/testing/demo_token_savings.py
+```
+
+**Compara:**
+- Consultas sin caché
+- Consultas con caché
+- Ahorro de tokens
+- Ahorro de costos
+
+---
+
+## 🔧 **Utilidades**
+
+### **`utils/generate_secret_key.py`**
+Genera una clave secreta segura para JWT.
+
+```bash
+uv run python scripts/utils/generate_secret_key.py
+```
+
+**Genera:**
+- Clave secreta de 32 bytes
+- Codificada en base64
+- Lista para usar en `.env`
+
+---
+
+### **`utils/verify_deployment.py`**
+Verifica que el deployment esté funcionando correctamente.
+
+```bash
+uv run python scripts/utils/verify_deployment.py
+```
+
+**Verifica:**
+- Backend respondiendo
+- Frontend accesible
+- Base de datos conectada
+- Servicios externos (APIs)
+- Health checks
+
+---
+
+## 📊 **Integración con CI/CD**
+
+### **GitHub Actions**
+
+Ejemplo de workflow para verificar arquitectura:
 
 ```yaml
 # .github/workflows/architecture-check.yml
@@ -245,33 +320,92 @@ jobs:
           pip install uv
           uv sync
       - name: Check Architecture
-        run: uv run python scripts/check_hexagonal_architecture.py
+        run: uv run python scripts/development/check_hexagonal_architecture.py
 ```
 
 ---
 
-## 🔒 Seguridad
+## 🔒 **Seguridad**
 
 **IMPORTANTE:** Estos scripts NO contienen credenciales ni información sensible.
 
 - ✅ Seguros para subir a GitHub
-- ✅ No acceden a `.env`
+- ✅ No acceden a `.env` directamente
 - ✅ Solo leen código fuente y estructura
+- ✅ No exponen datos sensibles en logs
 
 ---
 
-## 📝 Contribuir
+## 🚀 **Uso Rápido**
+
+### **Desarrollo**
+```bash
+# Iniciar en modo desarrollo
+./scripts/deployment/start_dev.sh
+
+# Verificar arquitectura
+uv run python scripts/development/check_hexagonal_architecture.py
+
+# Encontrar duplicados
+uv run python scripts/development/find_duplicates.py
+```
+
+### **Testing**
+```bash
+# Probar RAG
+uv run python scripts/testing/test_rag.py
+
+# Debug RAG flow
+uv run python scripts/testing/debug_rag_flow.py
+```
+
+### **Producción**
+```bash
+# Limpiar proyecto
+bash scripts/deployment/cleanup_for_production.sh
+
+# Iniciar en producción
+./scripts/deployment/start_prod.sh
+
+# Verificar deployment
+uv run python scripts/utils/verify_deployment.py
+```
+
+### **Base de Datos**
+```bash
+# Limpiar sesiones vacías
+uv run python scripts/database/clean_empty_sessions.py
+
+# Verificar tablas
+bash scripts/database/check_db_tables.sh
+```
+
+---
+
+## 📝 **Contribuir**
 
 Si creas un nuevo script:
 
-1. Agrégalo a este README
-2. Documenta su propósito y uso
-3. Incluye ejemplos de ejecución
-4. Indica si requiere permisos especiales
+1. **Colócalo en la carpeta apropiada:**
+   - `deployment/` - Scripts de deployment
+   - `database/` - Scripts de BD
+   - `development/` - Scripts de desarrollo
+   - `testing/` - Scripts de testing
+   - `utils/` - Utilidades generales
+
+2. **Documenta su propósito:**
+   - Agrega una sección en este README
+   - Incluye ejemplos de uso
+   - Indica requisitos especiales
+
+3. **Sigue las convenciones:**
+   - Nombres descriptivos en snake_case
+   - Shebang apropiado (`#!/usr/bin/env python3` o `#!/bin/bash`)
+   - Comentarios claros en el código
 
 ---
 
-## 🆘 Soporte
+## 🆘 **Soporte**
 
 Si tienes problemas con algún script:
 
@@ -279,8 +413,17 @@ Si tienes problemas con algún script:
 2. Asegúrate de tener las dependencias instaladas (`uv sync`)
 3. Revisa la documentación en `doc/`
 4. Consulta los logs de error
+5. Verifica permisos de ejecución (`chmod +x script.sh`)
 
 ---
 
-**Última actualización:** 2025-10-10  
-**Mantenedor:** Equipo de desarrollo
+## 📚 **Documentación Relacionada**
+
+- **[doc/README.md](../doc/README.md)** - Documentación completa del proyecto
+- **[doc/GUIA_RAPIDA.md](../doc/GUIA_RAPIDA.md)** - Inicio rápido
+- **[doc/DEPLOY_MANUAL.md](../doc/DEPLOY_MANUAL.md)** - Guía de deployment
+
+---
+
+**Última actualización:** 2025-10-19  
+**Mantenedor:** Gonzalo Ponce
