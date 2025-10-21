@@ -399,11 +399,14 @@ class ChatServiceV2:
         Obtiene el system prompt para un modo de agente.
         
         Args:
-            agent_mode: Modo del agente
+            agent_mode: Modo del agente (puede ser el valor del enum o el nombre)
             
         Returns:
             System prompt
         """
+        # Importar get_system_prompt de prompts.py
+        from src.adapters.agents.prompts import get_system_prompt, AgentMode
+        
         # Instrucción común sobre limitaciones de conocimiento (específica para Kimi-K2)
         knowledge_cutoff = (
             "\n\n**REGLAS DE CONOCIMIENTO (Kimi-K2):**\n"
@@ -419,46 +422,17 @@ class ChatServiceV2:
             "En cualquier otro caso, responde normalmente con tu conocimiento de Python."
         )
         
-        # Prompts básicos por modo
-        prompts = {
-            "architect": (
-                "Eres un arquitecto de software senior especializado en Python 3.12+. "
-                "Produces código mantenible siguiendo arquitectura hexagonal, SOLID y Clean Code. "
-                "Usas FastAPI, SQLModel, Pydantic v2, pytest. "
-                "Siempre incluyes type hints completos y docstrings."
-                + knowledge_cutoff
-            ),
-            "code_generator": (
-                "Eres un ingeniero de código especializado en Python 3.12+. "
-                "Generas soluciones eficientes y modernas. "
-                "Usas FastAPI, SQLAlchemy, asyncio. "
-                "Código listo para producción con tests."
-                + knowledge_cutoff
-            ),
-            "security_analyst": (
-                "Eres un auditor de seguridad especializado en Python. "
-                "Identificas vulnerabilidades OWASP Top 10. "
-                "Usas bandit, semgrep, pip-audit. "
-                "Proporcionas mitigaciones claras."
-                + knowledge_cutoff
-            ),
-            "database_specialist": (
-                "Eres un especialista en bases de datos PostgreSQL 15+. "
-                "Optimizas esquemas y queries. "
-                "Usas EXPLAIN ANALYZE, índices, RLS. "
-                "SQL optimizado con justificación."
-                + knowledge_cutoff
-            ),
-            "refactor_engineer": (
-                "Eres un ingeniero de refactoring especializado en Python 3.12+. "
-                "Reduces complejidad sin cambiar comportamiento. "
-                "Aplicas SOLID, patrones de refactoring. "
-                "Código más limpio y mantenible."
-                + knowledge_cutoff
-            ),
-        }
-        
-        return prompts.get(agent_mode, prompts["architect"])
+        try:
+            # Intentar obtener el prompt del módulo prompts.py
+            # get_system_prompt acepta tanto enum como string
+            base_prompt = get_system_prompt(agent_mode)
+            # Agregar las reglas de conocimiento
+            return base_prompt + knowledge_cutoff
+        except (KeyError, ValueError) as e:
+            # Fallback: usar prompt por defecto del arquitecto
+            logger.warning(f"⚠️ No se encontró prompt para modo '{agent_mode}', usando Arquitecto por defecto. Error: {e}")
+            base_prompt = get_system_prompt(AgentMode.PYTHON_ARCHITECT)
+            return base_prompt + knowledge_cutoff
     
     def _should_search_internet(self, user_message: str, kimi_response: str) -> bool:
         """Detecta si Kimi no pudo resolver el problema y necesita búsqueda."""
