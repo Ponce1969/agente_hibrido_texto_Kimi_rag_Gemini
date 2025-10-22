@@ -83,7 +83,7 @@ src/
 - **Uso:** RAG con PDFs, consultas complejas
 - **Características:**
   - Búsqueda semántica con pgvector
-  - Embeddings optimizados (384 dims)
+  - Embeddings de alta calidad con Gemini text-embedding-004 (768 dims)
   - Top-5 chunks relevantes
 
 ### **3. Guardian Qwen2.5-1.5B (HuggingFace/SiliconFlow)**
@@ -108,9 +108,10 @@ src/
 
 ### **🔍 RAG (Retrieval-Augmented Generation)**
 - Indexación de PDFs con PostgreSQL + pgvector
-- Embeddings con `all-MiniLM-L6-v2` (384 dims)
-- Búsqueda semántica automática
+- Embeddings con **Gemini `text-embedding-004`** (768 dims)
+- Búsqueda semántica automática de alta precisión
 - Chunking optimizado (600 chars, overlap 100)
+- Modelo optimizado para mejor calidad de embeddings
 
 ### **🌐 Brave Search Integration**
 - Búsqueda especializada en Python
@@ -468,9 +469,9 @@ FILE_MAX_PDF_PAGES=15
 ### **Cambiar Modelo de Embeddings**
 
 ```python
-# src/adapters/agents/gemini_embeddings_adapter.py
-MODEL_NAME = "all-MiniLM-L6-v2"  # Ligero (384 dims)
-# MODEL_NAME = "all-mpnet-base-v2"  # Mejor calidad (768 dims)
+# Configuración de embeddings (ya optimizado)
+# Modelo actual: Gemini text-embedding-004 (768 dims)
+# Configurado en: src/adapters/agents/gemini_embeddings_adapter.py
 ```
 
 ### **Configurar Agentes**
