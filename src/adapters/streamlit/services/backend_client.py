@@ -148,10 +148,26 @@ class BackendClient:
                 error="Timeout: El agente tardó demasiado en responder"
             )
         except httpx.HTTPStatusError as e:
+            # Intentar extraer mensaje user-friendly del JSON de error
+            error_msg = f"Error del servidor: {e.response.status_code}"
+            try:
+                error_data = e.response.json()
+                # Si el Guardian bloqueó el mensaje (403)
+                if e.response.status_code == 403 and error_data.get("error") == "message_blocked":
+                    user_message = error_data.get("message", "Tu mensaje ha sido bloqueado por razones de seguridad.")
+                    reason = error_data.get("reason", "")
+                    error_msg = f"🛡️ {user_message}\n\n💡 **Motivo:** {reason}"
+                else:
+                    # Otros errores del servidor
+                    error_msg = error_data.get("detail", error_msg)
+            except:
+                # Si no se puede parsear el JSON, usar mensaje genérico
+                pass
+            
             return ChatResponse(
                 content="",
                 success=False,
-                error=f"Error del servidor: {e.response.status_code}"
+                error=error_msg
             )
         except Exception as e:
             return ChatResponse(

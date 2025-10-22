@@ -15,7 +15,7 @@ from src.adapters.api.endpoints import auth
 from src.adapters.api.endpoints import guardian
 from src.adapters.db.database import create_db_and_tables
 from src.adapters.api.middleware.guardian_middleware import GuardianMiddleware
-from src.adapters.dependencies import get_guardian_service
+from src.adapters.dependencies import get_guardian_service_for_middleware
 from src.adapters.config.settings import settings
 
 
@@ -58,7 +58,7 @@ if settings.guardian_enabled:
     print("🛡️ Guardian de seguridad activado")
     app.add_middleware(
         GuardianMiddleware,
-        guardian_service=get_guardian_service(),
+        guardian_service=get_guardian_service_for_middleware(),
         enabled=settings.guardian_enabled
     )
 else:

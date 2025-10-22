@@ -13,6 +13,7 @@ class FileStatus(str):
 
 class FileUpload(SQLModel, table=True):
     __tablename__ = "file_uploads"
+    __table_args__ = {"extend_existing": True}
 
     id: Optional[int] = Field(default=None, primary_key=True)
     uuid_str: str = Field(index=True, description="UUID4 como nombre lógico del archivo en disco")
@@ -33,6 +34,7 @@ class FileUpload(SQLModel, table=True):
 
 class FileSection(SQLModel, table=True):
     __tablename__ = "file_sections"
+    __table_args__ = {"extend_existing": True}
 
     id: Optional[int] = Field(default=None, primary_key=True)
     file_id: int = Field(foreign_key="file_uploads.id", index=True)

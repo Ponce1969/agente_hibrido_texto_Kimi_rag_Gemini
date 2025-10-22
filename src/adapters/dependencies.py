@@ -187,11 +187,25 @@ def get_guardian_client() -> GuardianPort:
         enabled=settings.guardian_enabled
     )
 
+def _create_guardian_service_instance() -> GuardianService:
+    """Crea una instancia del servicio Guardian (sin Depends, para middleware)."""
+    guardian_client = get_guardian_client()
+    return GuardianService(
+        guardian_client=guardian_client,
+        max_calls_per_minute=settings.guardian_max_calls_per_minute,
+        cache_ttl=settings.guardian_cache_ttl,
+        min_length_to_check=settings.guardian_min_length
+    )
+
 @lru_cache(maxsize=1)
+def get_guardian_service_for_middleware() -> GuardianService:
+    """Factory para el servicio Guardian usado en middleware (sin Depends)."""
+    return _create_guardian_service_instance()
+
 def get_guardian_service(
     guardian_client: GuardianPort = Depends(get_guardian_client)
 ) -> GuardianService:
-    """Factory para el servicio Guardian con caché y rate limiting."""
+    """Factory para el servicio Guardian con caché y rate limiting (para endpoints)."""
     return GuardianService(
         guardian_client=guardian_client,
         max_calls_per_minute=settings.guardian_max_calls_per_minute,
