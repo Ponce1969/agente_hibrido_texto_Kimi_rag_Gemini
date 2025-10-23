@@ -1,0 +1,45 @@
+# Configuración de Streamlit para renderizado consistente cross-browser
+# Chrome, Firefox, Safari, Edge
+
+[theme]
+# Tema base (light es más consistente cross-browser)
+base = "light"
+
+# Colores profesionales del proyecto
+primaryColor = "#3366FF"              # Azul principal (botones, links, selectores)
+backgroundColor = "#FFFFFF"            # Fondo blanco puro
+secondaryBackgroundColor = "#F5F7FA"   # Gris muy claro (sidebar, containers, expanders)
+textColor = "#262730"                  # Negro suave (mejor legibilidad que #000)
+font = "sans serif"                    # Sans serif del sistema (más consistente)
+
+[server]
+# Configuración del servidor
+headless = true                        # No abrir browser automáticamente
+port = 8501                            # Puerto por defecto
+address = "0.0.0.0"                   # Escuchar en todas las interfaces (necesario para Docker)
+enableCORS = true                      # CORS necesario para XSRF protection
+enableXsrfProtection = true            # Protección XSRF activada
+maxUploadSize = 200                    # Límite de upload en MB (para PDFs grandes)
+maxMessageSize = 200                   # Límite de tamaño de mensaje en MB
+
+[browser]
+# Configuración del navegador
+gatherUsageStats = false               # No enviar estadísticas de uso a Streamlit Inc.
+serverAddress = "localhost"            # Dirección del servidor para desarrollo local
+serverPort = 8501                      # Puerto del servidor
+
+[runner]
+# Configuración de ejecución
+magicEnabled = true                    # Permitir "magic commands" (variables sin st.write)
+fastReruns = true                      # Reruns más rápidos (mejor UX)
+enforceSerializableSessionState = false  # Permitir objetos no serializables en session_state
+
+[client]
+# Configuración del cliente
+showErrorDetails = true                # Mostrar detalles de errores (útil para debugging)
+toolbarMode = "auto"                   # Toolbar: "auto", "developer", "viewer", "minimal"
+
+[logger]
+# Configuración de logging
+level = "info"                         # Nivel de log: "error", "warning", "info", "debug"
+messageFormat = "%(asctime)s %(message)s"  # Formato de mensajes de log

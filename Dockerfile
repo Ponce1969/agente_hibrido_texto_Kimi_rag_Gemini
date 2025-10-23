@@ -29,6 +29,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY src/ ./src
 COPY gunicorn.conf.py ./
 COPY .env ./
+COPY .streamlit/ ./.streamlit/
 
 # Exponer los puertos para FastAPI y Streamlit
 EXPOSE 8000

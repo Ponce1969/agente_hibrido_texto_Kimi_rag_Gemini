@@ -146,25 +146,36 @@ def render_dashboard():
 
 def main():
     """Función principal de la aplicación."""
-    st.title("🤖 Asistente IA con RAG")
-    st.markdown("*Arquitectura hexagonal • Python 3.12+ • PostgreSQL + pgvector*")
+    # Inicializar servicios primero (necesarios para detectar modo)
+    backend_client, session_service, file_service = initialize_services()
+    
+    # Inicializar componentes
+    chat_interface, session_manager, pdf_manager = initialize_components(
+        backend_client, session_service, file_service
+    )
+    
+    # Inicializar session_id si no existe
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = 0
+    
+    # Detectar modo RAG antes de renderizar título
+    # (necesitamos saber si hay PDF seleccionado)
+    temp_file_id = st.session_state.get("selected_file_id", None)
+    temp_use_context = st.session_state.get("usar_pdf_contexto", False)
+    is_rag_mode = temp_use_context and temp_file_id
+    
+    # TÍTULO DINÁMICO según modo
+    if is_rag_mode:
+        st.title("🔍 RAG Activado - Gemini 2.5 Flash")
+        st.markdown("*Búsqueda inteligente en PDF • Embeddings 768 dims • PostgreSQL + pgvector*")
+    else:
+        st.title("💬 Chat Normal - Kimi-K2")
+        st.markdown("*Conversación general • Arquitectura hexagonal • Python 3.12+*")
     
     # Tabs principales
     tab1, tab2 = st.tabs(["💬 Chat", "📊 Dashboard"])
     
     with tab1:
-        # Inicializar servicios
-        backend_client, session_service, file_service = initialize_services()
-        
-        # Inicializar componentes
-        chat_interface, session_manager, pdf_manager = initialize_components(
-            backend_client, session_service, file_service
-        )
-        
-        # Inicializar session_id si no existe (sin crear sesión aún)
-        if "session_id" not in st.session_state:
-            st.session_state.session_id = 0
-        
         # Layout principal
         with st.sidebar:
             # Selector de agente

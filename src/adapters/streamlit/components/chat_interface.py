@@ -217,12 +217,17 @@ class ChatInterface:
         """Renderiza la sección completa de chat."""
         st.header("💬 Chat")
         
-        # Mostrar modo de operación actual (SIEMPRE VISIBLE)
-        # Crear un placeholder que se actualiza dinámicamente
+        # Indicador visual claro del modo actual (colores diferenciados)
         if file_id:
-            st.info(f"✅ **Modo RAG Activo** - El asistente consultará el PDF con Gemini 2.5 (file_id={file_id})")
+            st.success(
+                f"🔍 **RAG Activado** - Gemini 2.5 Flash consultará el PDF (ID: {file_id})",
+                icon="✅"
+            )
         else:
-            st.success(f"💬 **Modo Chat Normal** - Conversación con Kimi-K2 (sin contexto PDF)")
+            st.info(
+                f"💬 **Chat Normal** - Conversación general con Kimi-K2",
+                icon="💭"
+            )
         
         # Historial de mensajes
         self.render_chat_history()
