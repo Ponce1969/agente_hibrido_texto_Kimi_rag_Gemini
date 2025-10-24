@@ -57,7 +57,7 @@ class Settings(BaseSettings):
         0.3, description="Temperatura para la generación del modelo (creatividad)."
     )
     max_tokens: int = Field(
-        4096, description="Máximo de tokens a generar en la respuesta."
+        8192, description="Máximo de tokens a generar en la respuesta (Gemini soporta hasta 8192)"
     )
 
     # --- Base de Datos ---
