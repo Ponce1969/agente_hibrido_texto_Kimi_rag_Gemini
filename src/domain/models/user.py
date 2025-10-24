@@ -24,6 +24,7 @@ class User(SQLModel, table=True):
         updated_at: Fecha de última actualización
     """
     __tablename__ = "users"
+    __table_args__ = {'extend_existing': True}
     
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True, max_length=255)
