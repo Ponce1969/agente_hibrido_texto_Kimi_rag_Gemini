@@ -27,6 +27,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Copiar el código fuente de la aplicación
 COPY src/ ./src
+COPY scripts/ ./scripts
 COPY gunicorn.conf.py ./
 COPY .env ./
 COPY .streamlit/ ./.streamlit/
