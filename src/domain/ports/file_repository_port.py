@@ -38,3 +38,7 @@ class FileRepositoryPort(Protocol):
     def update_file_pages(self, file_id: int, total_pages: int, pages_processed: int) -> None:
         """Actualiza el número de páginas de un archivo."""
         ...
+    
+    def delete_file(self, file_id: int) -> bool:
+        """Elimina un archivo y sus secciones asociadas."""
+        ...

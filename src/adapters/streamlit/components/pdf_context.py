@@ -77,7 +77,7 @@ class PDFContextManager:
             # Mostrar archivos en una tabla más visual
             for file in files:
                 with st.container():
-                    col1, col2, col3 = st.columns([3, 2, 1])
+                    col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
                     
                     with col1:
                         # Icono según el estado
@@ -125,6 +125,24 @@ class PDFContextManager:
                             # Botón para seleccionar
                             if st.button(f"📌 Seleccionar", key=f"select_{file.id}", use_container_width=True, type="primary"):
                                 st.session_state.pdf_file_id = file.id
+                                st.rerun()
+                    
+                    with col4:
+                        # Botón para eliminar archivo
+                        if st.button("🗑️", key=f"delete_{file.id}", use_container_width=True, type="secondary", help="Eliminar archivo"):
+                            # Confirmación antes de eliminar
+                            if st.session_state.get(f"confirm_delete_{file.id}"):
+                                with st.spinner(f"Eliminando {file.filename}..."):
+                                    success, message = self.file_service.delete_file(file.id)
+                                if success:
+                                    st.success(message)
+                                    st.session_state.pop(f"confirm_delete_{file.id}", None)
+                                    st.rerun()
+                                else:
+                                    st.error(message)
+                            else:
+                                st.session_state[f"confirm_delete_{file.id}"] = True
+                                st.warning(f"⚠️ Haz clic de nuevo para confirmar la eliminación de '{file.filename}'")
                                 st.rerun()
                     
                     st.divider()

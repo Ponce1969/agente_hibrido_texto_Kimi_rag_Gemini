@@ -182,12 +182,15 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         # Convertir numpy array a lista para PostgreSQL
         embedding_list = embedding.tolist()
         
+        # 🛡️ SANITIZAR: Eliminar caracteres NUL (0x00) que PostgreSQL no acepta
+        sanitized_text = text.replace('\x00', '')
+        
         # Crear chunk y guardar
         chunk = EmbeddingChunk(
             file_id=int(file_id),
             section_id=section_id,
             chunk_index=0,  # Ajustar según necesidad
-            content=text,
+            content=sanitized_text,
             embedding=embedding_list,
         )
         

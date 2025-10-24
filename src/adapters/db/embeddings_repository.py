@@ -61,6 +61,10 @@ class EmbeddingsRepository:
         with self.engine.begin() as conn:
             res = conn.execute(text(f"DELETE FROM {TABLE_NAME} WHERE file_id = :fid"), {"fid": file_id})
             return res.rowcount or 0
+    
+    def delete_chunks_by_file(self, file_id: int) -> int:
+        """Alias for delete_file_chunks for consistency."""
+        return self.delete_file_chunks(file_id)
 
     def count_chunks(self, file_id: int | None = None) -> int:
         """Return number of chunks already indexed for a file_id. If file_id is None, count all chunks."""

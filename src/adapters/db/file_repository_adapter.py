@@ -97,3 +97,29 @@ class SQLFileRepository(FileRepositoryPort):
                 db_file.updated_at = datetime.now(UTC)
                 session.add(db_file)
                 session.commit()
+
+    def delete_file(self, file_id: int) -> bool:
+        """
+        Elimina un archivo y sus secciones asociadas.
+        
+        Args:
+            file_id: ID del archivo a eliminar
+            
+        Returns:
+            True si se eliminó correctamente, False si no existía
+        """
+        with SQLSession(sqlite_engine) as session:
+            # Eliminar secciones primero (FK constraint)
+            sections = session.exec(
+                select(FileSection).where(FileSection.file_id == file_id)
+            ).all()
+            for section in sections:
+                session.delete(section)
+            
+            # Eliminar archivo
+            db_file = session.get(FileUpload, file_id)
+            if db_file:
+                session.delete(db_file)
+                session.commit()
+                return True
+            return False

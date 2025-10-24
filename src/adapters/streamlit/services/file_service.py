@@ -117,3 +117,26 @@ class FileService:
                     return False, f"No se pudo configurar el PDF: {index_msg}"
         except Exception as e:
             return False, f"Error configurando PDF: {e}"
+    
+    def delete_file(self, file_id: int) -> Tuple[bool, str]:
+        """
+        Elimina un archivo y todos sus datos asociados.
+        
+        Args:
+            file_id: ID del archivo a eliminar
+            
+        Returns:
+            (success, message)
+        """
+        try:
+            success = self.backend.delete_file(file_id)
+            if success:
+                # Limpiar session state si era el archivo activo
+                if st.session_state.get("pdf_file_id") == file_id:
+                    st.session_state.pdf_file_id = None
+                    st.session_state._use_pdf_context = False
+                return True, f"Archivo {file_id} eliminado correctamente"
+            else:
+                return False, f"No se pudo eliminar el archivo {file_id}"
+        except Exception as e:
+            return False, f"Error eliminando archivo: {e}"

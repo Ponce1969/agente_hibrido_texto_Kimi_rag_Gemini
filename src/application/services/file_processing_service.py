@@ -125,3 +125,42 @@ class FileProcessingService:
 
     def list_files(self, limit: int) -> list[FileDocument]:
         return self.file_repo.list_files(limit)
+    
+    def delete_file(self, file_id: int) -> bool:
+        """
+        Elimina un archivo y sus datos asociados (secciones y embeddings).
+        
+        Args:
+            file_id: ID del archivo a eliminar
+            
+        Returns:
+            True si se eliminó correctamente, False si no existía
+        """
+        logger.info(f"Eliminando archivo file_id={file_id}")
+        
+        # Eliminar embeddings primero
+        try:
+            from src.adapters.db.embeddings_repository import EmbeddingsRepository
+            repo = EmbeddingsRepository()
+            repo.delete_chunks_by_file(file_id)
+            logger.info(f"Embeddings eliminados para file_id={file_id}")
+        except Exception as e:
+            logger.warning(f"Error al eliminar embeddings de file_id={file_id}: {e}")
+        
+        # Eliminar archivo físico si existe
+        file_doc = self.file_repo.get_file(file_id)
+        if file_doc and os.path.exists(file_doc.file_path):
+            try:
+                os.remove(file_doc.file_path)
+                logger.info(f"Archivo físico eliminado: {file_doc.file_path}")
+            except Exception as e:
+                logger.warning(f"Error al eliminar archivo físico {file_doc.file_path}: {e}")
+        
+        # Eliminar registro de BD
+        success = self.file_repo.delete_file(file_id)
+        if success:
+            logger.info(f"Archivo {file_id} eliminado correctamente")
+        else:
+            logger.warning(f"Archivo {file_id} no encontrado en BD")
+        
+        return success

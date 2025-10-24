@@ -141,3 +141,24 @@ def trigger_processing(
     
     background_tasks.add_task(service.process_pdf_sections, file_id)
     return {"message": "Procesamiento iniciado"}
+
+@router.delete("/files/{file_id}", status_code=204, tags=["Files"])
+def delete_file(
+    file_id: int,
+    service: FileProcessingService = Depends(get_file_processing_service_dependency),
+):
+    """
+    Elimina un archivo y todos sus datos asociados (secciones, embeddings, archivo físico).
+    
+    Returns:
+        HTTP 204 No Content si se eliminó correctamente
+        HTTP 404 si el archivo no existe
+    """
+    try:
+        success = service.delete_file(file_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        return None  # HTTP 204 No Content
+    except Exception as e:
+        logger.error(f"Error al eliminar archivo {file_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error al eliminar archivo: {str(e)}")

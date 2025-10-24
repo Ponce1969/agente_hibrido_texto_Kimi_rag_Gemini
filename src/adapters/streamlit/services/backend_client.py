@@ -223,6 +223,31 @@ class BackendClient:
         response.raise_for_status()
         return response.json()
     
+    def delete_file(self, file_id: int) -> bool:
+        """
+        Elimina un archivo y todos sus datos asociados.
+        
+        Args:
+            file_id: ID del archivo a eliminar
+            
+        Returns:
+            True si se eliminó correctamente, False en caso contrario
+        """
+        try:
+            response = httpx.delete(f"{self.base_url}/files/{file_id}", timeout=10)
+            response.raise_for_status()
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                import streamlit as st
+                st.warning(f"⚠️ Archivo {file_id} no encontrado")
+                return False
+            raise
+        except Exception as e:
+            import streamlit as st
+            st.error(f"❌ Error eliminando archivo: {e}")
+            return False
+    
     def get_file_sections(self, file_id: int) -> List[FileSection]:
         """Obtiene las secciones de un archivo."""
         response = httpx.get(f"{self.base_url}/files/{file_id}/sections", timeout=30)
