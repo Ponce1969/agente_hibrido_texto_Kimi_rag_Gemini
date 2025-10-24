@@ -45,11 +45,16 @@ class EmbeddingsRepository:
             chunk_index INTEGER NOT NULL,
             content TEXT NOT NULL,
             embedding vector({EMBEDDING_DIM}) NOT NULL,
-            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+            page_number INTEGER,
+            section_type VARCHAR(100),
+            file_name VARCHAR(500)
         );
         CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_file_id ON {TABLE_NAME}(file_id);
         CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_section_id ON {TABLE_NAME}(section_id);
         CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_embedding ON {TABLE_NAME} USING ivfflat (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_page_number ON {TABLE_NAME}(page_number);
+        CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_section_type ON {TABLE_NAME}(section_type);
         """
         with self.engine.begin() as conn:
             # Ensure extension exists (noop if already enabled)
@@ -91,13 +96,16 @@ class EmbeddingsRepository:
                 "chunk_index": ch.chunk_index,
                 "content": ch.content,
                 "embedding": list(ch.embedding),  # psycopg2 + pgvector accepts python lists
+                "page_number": ch.page_number,
+                "section_type": ch.section_type,
+                "file_name": ch.file_name,
             })
         if not rows:
             return 0
         sql = text(
             f"""
-            INSERT INTO {TABLE_NAME} (file_id, section_id, chunk_index, content, embedding)
-            VALUES (:file_id, :section_id, :chunk_index, :content, :embedding)
+            INSERT INTO {TABLE_NAME} (file_id, section_id, chunk_index, content, embedding, page_number, section_type, file_name)
+            VALUES (:file_id, :section_id, :chunk_index, :content, :embedding, :page_number, :section_type, :file_name)
             """
         )
         with self.engine.begin() as conn:
@@ -108,10 +116,12 @@ class EmbeddingsRepository:
         self,
         query_embedding: Sequence[float],
         file_id: Optional[int] = None,
-        top_k: int = 5,
+        top_k: int = 10,
     ) -> List[SimilarChunk]:
         """Return top-k most similar chunks using cosine distance (<->).
         If file_id is provided, the search is filtered to that file.
+        
+        Default top_k aumentado de 5 a 10 para mejor cobertura de contexto.
         """
         # Convertir el embedding a string de array de PostgreSQL
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
@@ -123,7 +133,8 @@ class EmbeddingsRepository:
         sql = text(
             f"""
             SELECT id, file_id, section_id, chunk_index, content,
-                   (embedding <-> '{embedding_str}'::vector) AS distance
+                   (embedding <-> '{embedding_str}'::vector) AS distance,
+                   page_number, section_type, file_name
             FROM {TABLE_NAME}
             {filter_sql}
             ORDER BY embedding <-> '{embedding_str}'::vector
@@ -142,6 +153,9 @@ class EmbeddingsRepository:
                         chunk_index=row["chunk_index"],
                         content=row["content"],
                         distance=float(row["distance"]),
+                        page_number=row.get("page_number"),
+                        section_type=row.get("section_type"),
+                        file_name=row.get("file_name"),
                     )
                 )
             return out

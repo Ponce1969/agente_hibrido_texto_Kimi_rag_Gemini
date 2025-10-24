@@ -108,14 +108,14 @@ class Settings(BaseSettings):
         description="Tamaño de lote para encode() del modelo de embeddings. Optimizado para bajos recursos (2-4)",
     )
 
-    # --- Chunking de texto (optimizado para bajos recursos) ---
+    # --- Chunking de texto (optimizado para Gemini API) ---
     embedding_chunk_size: int = Field(
-        600,
-        description="Tamaño de chunk de texto para indexación de PDFs (caracteres) - reducido para bajos recursos",
+        1000,
+        description="Tamaño de chunk de texto para indexación de PDFs (caracteres) - aumentado para mejor contexto",
     )
     embedding_chunk_overlap: int = Field(
-        100,
-        description="Solapamiento entre chunks de texto (caracteres) - reducido para bajos recursos",
+        150,
+        description="Solapamiento entre chunks de texto (caracteres) - aumentado proporcionalmente",
     )
 
     # --- Búsqueda Python (Brave Search API) ---
@@ -133,8 +133,35 @@ class Settings(BaseSettings):
         description="Tiempo de vida del caché en segundos (1 hora por defecto)",
     )
     max_search_results: int = Field(
-        5,
-        description="Máximo de resultados de búsqueda a incluir en el contexto",
+        10,
+        description="Máximo de resultados de búsqueda a incluir en el contexto (aumentado para mejor cobertura)",
+    )
+    
+    # --- Búsqueda RAG Adaptativa (aprovecha ventana de contexto de Gemini) ---
+    # Optimizado para libros técnicos grandes (SQL, Python, etc.)
+    rag_simple_top_k: int = Field(
+        7,
+        description="Número de chunks para preguntas simples (¿Qué es X?)",
+    )
+    rag_normal_top_k: int = Field(
+        12,
+        description="Número de chunks para preguntas normales - aumentado para libros técnicos densos",
+    )
+    rag_complex_top_k: int = Field(
+        20,
+        description="Número de chunks para preguntas complejas - aumentado para análisis profundos de libros grandes",
+    )
+    rag_simple_limit: int = Field(
+        8000,
+        description="Límite de caracteres de contexto para preguntas simples",
+    )
+    rag_normal_limit: int = Field(
+        15000,
+        description="Límite de caracteres de contexto para preguntas normales - aumentado para libros densos",
+    )
+    rag_complex_limit: int = Field(
+        30000,
+        description="Límite de caracteres de contexto para preguntas complejas - aprovecha ventana de Gemini al máximo",
     )
     
     # --- Guardian (Qwen2.5-1.5B Security) ---

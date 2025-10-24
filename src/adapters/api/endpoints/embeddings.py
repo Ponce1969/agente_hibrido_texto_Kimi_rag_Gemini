@@ -55,7 +55,7 @@ async def embeddings_index(
 async def embeddings_search(
     q: str = Query(..., description="Consulta de texto"),
     file_id: int | None = Query(None),
-    top_k: int = Query(5, ge=1, le=50),
+    top_k: int = Query(10, ge=1, le=50),
     service: EmbeddingsServiceV2 = Depends(get_embeddings_service_dependency),
 ):
     """Realiza una búsqueda semántica en los chunks de un archivo o en todos."""

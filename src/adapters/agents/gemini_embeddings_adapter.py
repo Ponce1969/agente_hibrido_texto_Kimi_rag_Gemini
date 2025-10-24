@@ -163,6 +163,11 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         section_id: int,
         text: str,
         embedding: EmbeddingVector,
+        *,
+        page_number: int | None = None,
+        section_type: str | None = None,
+        file_name: str | None = None,
+        chunk_index: int = 0,
     ) -> None:
         """
         Almacena un embedding en PostgreSQL con pgvector.
@@ -172,6 +177,10 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
             section_id: ID de la sección
             text: Texto original
             embedding: Vector de embedding
+            page_number: Número de página del chunk (opcional)
+            section_type: Tipo de sección (opcional)
+            file_name: Nombre del archivo (opcional)
+            chunk_index: Índice del chunk (default: 0)
         """
         # Importar modelos y repositorio
         from src.adapters.db.embeddings_repository import EmbeddingsRepository
@@ -185,13 +194,16 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         # 🛡️ SANITIZAR: Eliminar caracteres NUL (0x00) que PostgreSQL no acepta
         sanitized_text = text.replace('\x00', '')
         
-        # Crear chunk y guardar
+        # Crear chunk con metadatos y guardar
         chunk = EmbeddingChunk(
             file_id=int(file_id),
             section_id=section_id,
-            chunk_index=0,  # Ajustar según necesidad
+            chunk_index=chunk_index,
             content=sanitized_text,
             embedding=embedding_list,
+            page_number=page_number,
+            section_type=section_type,
+            file_name=file_name,
         )
         
         repo.insert_chunks([chunk])
@@ -201,7 +213,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         query_embedding: EmbeddingVector,
         file_id: str,
         *,
-        top_k: int = 5,
+        top_k: int = 10,
         min_similarity: float = 0.0,
     ) -> list[SearchResult]:
         """
@@ -262,7 +274,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         query_embedding: EmbeddingVector,
         *,
         file_ids: list[str] | None = None,
-        top_k: int = 5,
+        top_k: int = 10,
         min_similarity: float = 0.0,
     ) -> list[SearchResult]:
         """
@@ -329,13 +341,17 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
             batch_size=batch_size,
         )
         
-        # Guardar cada embedding
-        for section, embedding in zip(sections, embeddings):
+        # Guardar cada embedding con metadatos
+        for idx, (section, embedding) in enumerate(zip(sections, embeddings)):
             await self.store_embedding(
                 file_id=file.id,
                 section_id=section.id,
                 text=section.text,
                 embedding=embedding,
+                page_number=section.page_number,
+                section_type="chapter" if section.page_number is not None else None,
+                file_name=file.filename,
+                chunk_index=idx,
             )
         
         return len(sections)

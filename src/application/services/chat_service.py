@@ -221,17 +221,67 @@ class ChatServiceV2:
         rag_context = ""
         if file_id and self.embeddings:
             try:
+                # 🎯 BÚSQUEDA ADAPTATIVA: Ajustar top_k según complejidad de la pregunta
+                # Preguntas complejas necesitan más contexto para aprovechar ventana de Gemini
+                from src.adapters.config.settings import settings
+                
+                question_length = len(user_message)
+                is_complex = any(word in user_message.lower() for word in [
+                    # Análisis y comparación
+                    'compara', 'diferencia', 'diferencias', 'relación', 'relaciona',
+                    'contrasta', 'versus', 'vs', 'frente a', 'comparación',
+                    # Explicación profunda
+                    'explica detalladamente', 'explica en detalle', 'profundiza',
+                    'desarrolla', 'elabora', 'detalla', 'describe en profundidad',
+                    'extiende', 'amplía', 'expande',
+                    # Análisis técnico
+                    'analiza', 'evalúa', 'examina', 'investiga', 'estudia',
+                    'revisa', 'inspecciona', 'diagnostica',
+                    # Enumeración y listado
+                    'enumera', 'lista', 'identifica', 'menciona todos',
+                    'cuáles son', 'qué tipos', 'qué clases',
+                    # Síntesis y conexión
+                    'sintetiza', 'resume extensamente', 'conecta', 'vincula',
+                    'integra', 'unifica', 'combina',
+                    # Ejemplos y casos
+                    'ejemplos', 'ejemplo práctico', 'casos de uso', 'casos prácticos',
+                    'demuestra', 'ilustra', 'muestra cómo',
+                    # Procedimientos y pasos
+                    'paso a paso', 'procedimiento', 'proceso completo', 'cómo hacer',
+                    'implementar', 'aplicar en la práctica',
+                    # Conceptos avanzados
+                    'ventajas y desventajas', 'pros y contras', 'beneficios y limitaciones',
+                    'implicaciones', 'consecuencias', 'impacto',
+                    # Contexto técnico (SQL, programación)
+                    'optimización', 'rendimiento', 'mejor práctica', 'mejores prácticas',
+                    'arquitectura', 'diseño', 'patrones', 'estrategias'
+                ])
+                
+                # Ajustar top_k dinámicamente usando configuración
+                if is_complex or question_length > 100:
+                    top_k = settings.rag_complex_top_k  # Preguntas complejas
+                    limit = settings.rag_complex_limit
+                    complexity = "compleja"
+                elif question_length > 50:
+                    top_k = settings.rag_normal_top_k  # Preguntas normales
+                    limit = settings.rag_normal_limit
+                    complexity = "normal"
+                else:
+                    top_k = settings.rag_simple_top_k  # Preguntas simples
+                    limit = settings.rag_simple_limit
+                    complexity = "simple"
+                
+                logger.info(f"🎯 Búsqueda adaptativa ({complexity}): top_k={top_k}, limit={limit} chars")
+                
                 # Buscar chunks relevantes
                 results = await self.embeddings.search_similar(
                     query=user_message,
                     file_id=str(file_id),
-                    top_k=5
+                    top_k=top_k
                 )
                 
                 if results:
                     logger.info(f"✅ RAG: {len(results)} chunks encontrados para file_id={file_id}")
-                    # Construir contexto con límite de 8000 caracteres
-                    limit = 8000
                     acc = 0
                     parts: list[str] = []
                     

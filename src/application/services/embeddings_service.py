@@ -78,7 +78,7 @@ class EmbeddingsServiceV2:
         query: str,
         file_id: str | None,
         *,
-        top_k: int = 5,
+        top_k: int = 10,
         min_similarity: float = 0.0,
     ) -> list[dict[str, Any]]:
         """
@@ -131,8 +131,8 @@ class EmbeddingsServiceV2:
 def chunk_text(
     text: str,
     *,
-    chunk_size: int = 600,
-    overlap: int = 100,
+    chunk_size: int = 1000,
+    overlap: int = 150,
 ) -> list[str]:
     """
     Divide un texto en chunks con overlap.
