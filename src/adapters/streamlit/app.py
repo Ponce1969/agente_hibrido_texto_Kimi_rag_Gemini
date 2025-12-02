@@ -12,6 +12,78 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# CSS para fijar el chat_input abajo (estilo ChatGPT)
+st.markdown("""
+<style>
+    /* Fijar el input del chat en la parte inferior */
+    .stChatInput {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 1rem 2rem;
+        background: #F5F7FA;
+        border-top: 2px solid #FF4B4B;
+        z-index: 999;
+    }
+    
+    /* Estilizar el input de texto en rojo */
+    .stChatInput textarea {
+        background: #FFFFFF !important;
+        border: 2px solid #FF4B4B !important;
+        border-radius: 12px !important;
+        padding: 12px 16px !important;
+        font-size: 16px !important;
+        box-shadow: 0 2px 8px rgba(255, 75, 75, 0.15) !important;
+    }
+    
+    /* Eliminar TODOS los efectos de focus que agrandan el input */
+    .stChatInput *:focus,
+    .stChatInput *:focus-visible,
+    .stChatInput *:focus-within {
+        outline: none !important;
+        outline-width: 0 !important;
+        box-shadow: 0 2px 8px rgba(255, 75, 75, 0.15) !important;
+    }
+    
+    /* Eliminar el borde extra del contenedor de Streamlit */
+    .stChatInput > div,
+    .stChatInput > div > div,
+    .stChatInput [data-baseweb="base-input"],
+    .stChatInput [data-baseweb="textarea"] {
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+    
+    .stChatInput textarea::placeholder {
+        color: #666 !important;
+        font-style: italic;
+    }
+    
+    /* Botón de enviar en rojo */
+    .stChatInput button {
+        background: #FF4B4B !important;
+        border-radius: 10px !important;
+    }
+    
+    .stChatInput button:hover {
+        background: #E03E3E !important;
+    }
+    
+    /* Ajustar para el sidebar cuando está abierto */
+    [data-testid="stSidebar"][aria-expanded="true"] ~ div .stChatInput {
+        left: 21rem;
+    }
+    
+    /* Dar espacio al contenido para que no quede tapado por el input fijo */
+    .main .block-container {
+        padding-bottom: 100px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Imports de la arquitectura hexagonal
 import sys
 import os
