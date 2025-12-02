@@ -12,22 +12,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS mínimo para asegurar que el chat_input quede fijo abajo (compatible con móvil)
-st.markdown("""
-<style>
-    /* El chat_input de Streamlit ya tiene position:fixed por defecto */
-    /* Solo aseguramos que tenga el z-index correcto y padding */
-    .stChatInput {
-        z-index: 999;
-    }
-    
-    /* Espacio para que el contenido no quede tapado por el input */
-    .main .block-container {
-        padding-bottom: 80px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # Imports de la arquitectura hexagonal
 import sys
 import os

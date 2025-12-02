@@ -54,17 +54,13 @@ class ChatInterface:
                 st.markdown(message["content"])
     
     def handle_user_input(self, agent_mode: AgentMode, file_id: Optional[int] = None) -> None:
-        """Maneja la entrada del usuario y genera respuesta.
-        
-        Usa st.chat_input que se posiciona automáticamente al fondo (estilo ChatGPT).
-        """
-        # st.chat_input se auto-limpia y se posiciona al fondo
-        if prompt := st.chat_input("Escribe tu mensaje aquí..."):
-            # Mostrar mensaje del usuario inmediatamente
+        """Maneja la entrada del usuario y genera respuesta."""
+        if prompt := st.chat_input("Escribe tu consulta aquí..."):
+            # Mostrar mensaje del usuario
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # Agregar mensaje del usuario al historial
+            # Agregar a la sesión
             st.session_state.messages.append({"role": "user", "content": prompt})
             
             # Preparar request
@@ -76,14 +72,16 @@ class ChatInterface:
                 file_id=file_id
             )
             
-            # Generar respuesta del asistente
+            # El mensaje de modo RAG ya se muestra arriba, no necesitamos duplicarlo aquí
+            
+            # Generar respuesta
             with st.chat_message("assistant"):
-                with st.spinner("🤔 Pensando..."):
+                with st.spinner("Pensando..."):
                     response = self.backend.send_chat_message(request)
                 
                 if response.success:
                     st.markdown(response.content)
-                    # Agregar respuesta al historial
+                    # Agregar respuesta a la sesión
                     st.session_state.messages.append({
                         "role": "assistant", 
                         "content": response.content
@@ -93,7 +91,7 @@ class ChatInterface:
                     try:
                         self.session_service.load_session_messages(session_id)
                     except Exception:
-                        pass
+                        pass  # Si falla, mantenemos el estado local
                 else:
                     st.error(f"Error: {response.error}")
     
@@ -216,10 +214,10 @@ class ChatInterface:
             )
 
     def render_chat_section(self, agent_mode: AgentMode, file_id: Optional[int] = None) -> None:
-        """Renderiza la sección completa de chat estilo ChatGPT/Claude."""
+        """Renderiza la sección completa de chat."""
         st.header("💬 Chat")
         
-        # Indicador visual del modo actual
+        # Indicador visual claro del modo actual (colores diferenciados)
         if file_id:
             st.success(
                 f"🔍 **RAG Activado** - Gemini 2.5 Flash consultará el PDF (ID: {file_id})",
@@ -231,8 +229,8 @@ class ChatInterface:
                 icon="💭"
             )
         
-        # === CONVERSACIÓN (flujo de mensajes) ===
+        # Historial de mensajes
         self.render_chat_history()
         
-        # === INPUT ABAJO (estilo ChatGPT) ===
+        # Entrada de usuario
         self.handle_user_input(agent_mode, file_id)
