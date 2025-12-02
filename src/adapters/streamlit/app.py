@@ -12,10 +12,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS para fijar el chat_input abajo (estilo ChatGPT)
+# CSS para fijar el chat_input abajo (estilo ChatGPT) - Responsive
 st.markdown("""
 <style>
-    /* Fijar el input del chat en la parte inferior */
+    /* Fijar el input del chat en la parte inferior - DESKTOP */
     .stChatInput {
         position: fixed;
         bottom: 0;
@@ -25,6 +25,8 @@ st.markdown("""
         background: #F5F7FA;
         border-top: 2px solid #FF4B4B;
         z-index: 999;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
     }
     
     /* Estilizar el input de texto en rojo */
@@ -35,6 +37,10 @@ st.markdown("""
         padding: 12px 16px !important;
         font-size: 16px !important;
         box-shadow: 0 2px 8px rgba(255, 75, 75, 0.15) !important;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        touch-action: manipulation;
     }
     
     /* Eliminar TODOS los efectos de focus que agrandan el input */
@@ -66,13 +72,15 @@ st.markdown("""
     .stChatInput button {
         background: #FF4B4B !important;
         border-radius: 10px !important;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
     }
     
     .stChatInput button:hover {
         background: #E03E3E !important;
     }
     
-    /* Ajustar para el sidebar cuando está abierto */
+    /* Ajustar para el sidebar cuando está abierto - DESKTOP */
     [data-testid="stSidebar"][aria-expanded="true"] ~ div .stChatInput {
         left: 21rem;
     }
@@ -80,6 +88,46 @@ st.markdown("""
     /* Dar espacio al contenido para que no quede tapado por el input fijo */
     .main .block-container {
         padding-bottom: 100px;
+    }
+    
+    /* ========== RESPONSIVE - MÓVIL ========== */
+    @media screen and (max-width: 768px) {
+        /* En móvil, usar position sticky en lugar de fixed */
+        .stChatInput {
+            position: -webkit-sticky;
+            position: sticky;
+            bottom: 0;
+            left: 0 !important;
+            right: 0;
+            padding: 0.75rem 1rem;
+            margin: 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        /* Input más pequeño en móvil */
+        .stChatInput textarea {
+            font-size: 16px !important; /* Evita zoom en iOS */
+            padding: 10px 12px !important;
+            min-height: 44px; /* Tamaño mínimo táctil */
+        }
+        
+        /* Botón más grande para touch */
+        .stChatInput button {
+            min-width: 44px;
+            min-height: 44px;
+            padding: 10px !important;
+        }
+        
+        /* Sidebar no afecta en móvil */
+        [data-testid="stSidebar"][aria-expanded="true"] ~ div .stChatInput {
+            left: 0 !important;
+        }
+        
+        /* Más espacio abajo en móvil */
+        .main .block-container {
+            padding-bottom: 120px;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
