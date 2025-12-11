@@ -35,7 +35,6 @@ from .models.chat_models import (
 # Las interfaces están en domain/ports/ siguiendo arquitectura hexagonal
 # Servicios de dominio
 from .services.chat_domain_service import (
-    AgentDomainService,
     ChatDomainService,
     FileDomainService,
     ValidationService,

@@ -16,9 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.adapters.dependencies import get_chat_service_dependency
-from src.application.services.chat_service_hibrido_mejorado import (
-    ChatServiceHibridoMejorado,
-)
+from src.application.services.chat_service import ChatServiceV2
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +158,7 @@ def should_use_rag(query: str) -> bool:
 @router.post("/llm-gateway", response_model=LLMGatewayResponse)
 async def llm_gateway(
     request: LLMGatewayRequest,
-    service: ChatServiceHibridoMejorado = Depends(get_chat_service_dependency),
+    service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """
     Gateway interno para modelos locales LLaMA/Gemma.
@@ -187,16 +185,24 @@ async def llm_gateway(
 
         logger.info(f"Procesando query con modo: {mode_used}")
 
-        # 3. Llamar al servicio correspondiente
+        # 3. Llamar al servicio correspondiente usando el método handle_message
         if mode_used == "rag":
-            answer = await service._handle_with_rag_gemini(
+            # Para RAG, usamos el modo de agente que corresponde a RAG
+            answer = await service.handle_message(
                 session_id=str(request.session_id),
-                user_message=request.query
+                user_message=request.query,
+                agent_mode="Arquitecto Python Senior",  # Modo que usa RAG
+                file_id=1,  # Usar el archivo de libros técnicos
+                use_internet=False
             )
         elif mode_used == "kimi":
-            answer = await service._handle_with_kimi(
+            # Para Kimi, usamos un modo simple sin RAG
+            answer = await service.handle_message(
                 session_id=str(request.session_id),
-                user_message=request.query
+                user_message=request.query,
+                agent_mode="Ingeniero de Código",  # Modo simple
+                file_id=None,  # Sin RAG
+                use_internet=True
             )
         else:
             raise HTTPException(status_code=400, detail=f"Modo no soportado: {request.mode}")
