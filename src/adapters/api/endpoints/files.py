@@ -2,12 +2,20 @@
 Endpoints para la gestión de archivos, refactorizados para seguir la arquitectura hexagonal.
 """
 import logging
-from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Query
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from pydantic import BaseModel
 
-from src.application.services.file_processing_service import FileProcessingService
 from src.adapters.dependencies import get_file_processing_service_dependency
+from src.application.services.file_processing_service import FileProcessingService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,7 +61,7 @@ async def upload_file(
         logger.error(f"Error al subir archivo: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno al subir el archivo.")
 
-@router.get("/files", response_model=List[FileStatusResponse], tags=["Files"])
+@router.get("/files", response_model=list[FileStatusResponse], tags=["Files"])
 def list_files(
     limit: int = Query(20, ge=1, le=200),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
@@ -61,7 +69,7 @@ def list_files(
     try:
         files = service.list_files(limit)
 
-        result: List[FileStatusResponse] = []
+        result: list[FileStatusResponse] = []
         for f in files:
             # Asegurar tipos correctos
             fid = (
@@ -71,13 +79,13 @@ def list_files(
             status_str = f.status.value if hasattr(f.status, "value") else str(f.status)
 
             # Convertir created_at a string ISO (requerido)
-            from datetime import datetime, UTC
+            from datetime import UTC, datetime
             if f.created_at:
                 created_at_str = f.created_at.isoformat() if hasattr(f.created_at, 'isoformat') else str(f.created_at)
             else:
                 # Fallback si no hay created_at
                 created_at_str = datetime.now(UTC).isoformat()
-            
+
             result.append(
                 FileStatusResponse(
                     id=fid,
@@ -105,17 +113,17 @@ def get_file_status(
     file_doc = service.get_file_status(file_id)
     if not file_doc:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    
+
     # Construir respuesta manualmente (file_doc es dataclass, no tiene .dict())
-    from datetime import datetime, UTC
-    
+    from datetime import UTC, datetime
+
     if file_doc.created_at:
         created_at_str = file_doc.created_at.isoformat() if hasattr(file_doc.created_at, 'isoformat') else str(file_doc.created_at)
     else:
         created_at_str = datetime.now(UTC).isoformat()
-    
+
     status_str = file_doc.status.value if hasattr(file_doc.status, 'value') else str(file_doc.status)
-    
+
     return FileStatusResponse(
         id=int(file_doc.id),
         filename=file_doc.filename,
@@ -138,7 +146,7 @@ def trigger_processing(
     file_doc = service.get_file_status(file_id)
     if not file_doc:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    
+
     background_tasks.add_task(service.process_pdf_sections, file_id)
     return {"message": "Procesamiento iniciado"}
 
@@ -149,7 +157,7 @@ def delete_file(
 ):
     """
     Elimina un archivo y todos sus datos asociados (secciones, embeddings, archivo físico).
-    
+
     Returns:
         HTTP 204 No Content si se eliminó correctamente
         HTTP 404 si el archivo no existe

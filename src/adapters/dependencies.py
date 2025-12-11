@@ -7,41 +7,49 @@ inyectadas, siguiendo el patrón de Dependency Injection.
 
 from __future__ import annotations
 
-from functools import lru_cache
-from fastapi import Depends
-import httpx
+from functools import cache
 
+import httpx
+from fastapi import Depends
 from sqlmodel import Session
 
-from src.domain.ports import (ChatRepositoryPort, EmbeddingsPort, LLMPort, 
-                              FileRepositoryPort, PythonSearchPort, GuardianPort)
-                              
 from src.adapters.agents.gemini_adapter import GeminiAdapter
 from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapter
-from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
-from src.adapters.db.file_repository_adapter import SQLFileRepository
-from src.adapters.db.database import get_session
-from src.adapters.tools.bear_python_tool import BearPythonTool
-from src.adapters.tools.qwen_guardian_client import QwenGuardianClient
-from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
-
-from src.application.services.chat_service import ChatServiceV2
-from src.application.services.embeddings_service import EmbeddingsServiceV2
-from src.application.services.file_processing_service import FileProcessingService
-from src.application.services.metrics_service import MetricsService
-from src.application.services.auth_service import AuthService
-from src.application.services.guardian_service import GuardianService
 from src.adapters.config.settings import settings
+from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
+from src.adapters.db.database import get_session
+from src.adapters.db.file_repository_adapter import SQLFileRepository
+from src.adapters.db.user_repository import SQLModelUserRepository
+from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
 from src.adapters.security.argon2_hasher import Argon2PasswordHasher
 from src.adapters.security.jwt_token_service import JWTTokenService
-from src.adapters.db.user_repository import SQLModelUserRepository
+from src.adapters.tools.bear_python_tool import BearPythonTool
+from src.adapters.tools.qwen_guardian_client import QwenGuardianClient
+from src.application.services.auth_service import AuthService
+from src.application.services.chat_service import ChatServiceV2
+from src.application.services.chat_service_hibrido_mejorado import (
+    ChatServiceHibridoMejorado,
+)
+from src.application.services.embeddings_service import EmbeddingsServiceV2
+from src.application.services.file_processing_service import FileProcessingService
+from src.application.services.guardian_service import GuardianService
+from src.application.services.metrics_service import MetricsService
+from src.domain.ports import (
+    ChatRepositoryPort,
+    EmbeddingsPort,
+    FileRepositoryPort,
+    GuardianPort,
+    LLMPort,
+    PythonSearchPort,
+)
+
 
 # --- Caché para singletons ---
-@lru_cache(maxsize=None)
+@cache
 def get_http_client() -> httpx.Client:
     return httpx.Client()
 
-@lru_cache(maxsize=None)
+@cache
 def get_async_http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient()
 
@@ -72,7 +80,7 @@ def get_python_search_tool() -> PythonSearchPort:
         base_url=settings.bear_base_url,
     )
 
-@lru_cache(maxsize=None)
+@cache
 def get_metrics_service() -> MetricsService:
     """Factory para el servicio de métricas (singleton)."""
     metrics_repository = SQLModelMetricsRepository()
@@ -87,7 +95,7 @@ def get_file_processing_service(
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
 ) -> FileProcessingService:
     return FileProcessingService(
-        file_repo, 
+        file_repo,
         embeddings_service,
         max_pdf_size_mb=settings.file_max_pdf_size_mb
     )
@@ -107,6 +115,30 @@ def get_chat_service(
         embeddings_service=embeddings_service,
         python_search=python_search,
         metrics_service=metrics_service,
+    )
+
+def get_chat_service_hibrido_mejorado(
+    llm_client: LLMPort = Depends(get_kimi_adapter),
+    fallback_llm: LLMPort = Depends(get_gemini_adapter),
+    repository: ChatRepositoryPort = Depends(get_chat_repository),
+    embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
+    python_search: PythonSearchPort = Depends(get_python_search_tool),
+    metrics_service: MetricsService = Depends(get_metrics_service),
+) -> ChatServiceHibridoMejorado:
+    """
+    Factory para el servicio de chat HÍBRIDO MEJORADO.
+
+    Incluye modelos locales (LLaMA3.1:8b, Gemma2:2b) como fallback adicional
+    y routing inteligente basado en tipo de pregunta.
+    """
+    return ChatServiceHibridoMejorado(
+        llm_client=llm_client,
+        repository=repository,
+        fallback_llm=fallback_llm,
+        embeddings_service=embeddings_service,
+        python_search=python_search,
+        metrics_service=metrics_service,
+        enable_local_fallback=True,  # Habilitar modelos locales
     )
 
 # --- Dependencias para Endpoints de FastAPI ---
@@ -130,6 +162,29 @@ def get_chat_service_dependency(
         metrics_service=metrics_service,
     )
 
+def get_chat_service_hibrido_dependency(
+    llm_client: LLMPort = Depends(get_kimi_adapter),
+    fallback_llm: LLMPort = Depends(get_gemini_adapter),
+    repository: ChatRepositoryPort = Depends(get_chat_repository),
+    embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
+    python_search: PythonSearchPort = Depends(get_python_search_tool),
+    metrics_service: MetricsService = Depends(get_metrics_service),
+) -> ChatServiceHibridoMejorado:
+    """
+    Dependencia para endpoints que usan el servicio HÍBRIDO MEJORADO.
+
+    Esta es la que deben usar los nuevos endpoints híbridos.
+    """
+    return ChatServiceHibridoMejorado(
+        llm_client=llm_client,
+        repository=repository,
+        fallback_llm=fallback_llm,
+        embeddings_service=embeddings_service,
+        python_search=python_search,
+        metrics_service=metrics_service,
+        enable_local_fallback=True,
+    )
+
 def get_embeddings_service_dependency() -> EmbeddingsServiceV2:
     return get_embeddings_service()
 
@@ -139,19 +194,19 @@ def get_file_processing_service_dependency(
 ) -> FileProcessingService:
     # Igual que con chat_service: no invocar directamente a una función con Depends.
     return FileProcessingService(
-        file_repo, 
+        file_repo,
         embeddings_service,
         max_pdf_size_mb=settings.file_max_pdf_size_mb
     )
 
 # --- Servicios de Autenticación ---
 
-@lru_cache(maxsize=None)
+@cache
 def get_password_hasher() -> Argon2PasswordHasher:
     """Factory para el hasher de contraseñas (singleton)."""
     return Argon2PasswordHasher()
 
-@lru_cache(maxsize=None)
+@cache
 def get_token_service() -> JWTTokenService:
     """Factory para el servicio de tokens (singleton)."""
     return JWTTokenService(
@@ -177,7 +232,7 @@ def get_auth_service(
     )
 
 # --- Guardian ---
-@lru_cache(maxsize=1)
+@cache
 def get_guardian_client() -> GuardianPort:
     """Factory para el cliente Guardian (Qwen2.5-1.5B)."""
     return QwenGuardianClient(
@@ -197,7 +252,7 @@ def _create_guardian_service_instance() -> GuardianService:
         min_length_to_check=settings.guardian_min_length
     )
 
-@lru_cache(maxsize=1)
+@cache
 def get_guardian_service_for_middleware() -> GuardianService:
     """Factory para el servicio Guardian usado en middleware (sin Depends)."""
     return _create_guardian_service_instance()

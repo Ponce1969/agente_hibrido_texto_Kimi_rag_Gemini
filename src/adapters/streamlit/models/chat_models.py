@@ -2,7 +2,7 @@
 Modelos para el sistema de chat en Streamlit.
 """
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+
 from src.adapters.agents.prompts import AgentMode
 
 
@@ -12,7 +12,7 @@ class ChatMessage:
     role: str
     content: str
     message_index: int
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 @dataclass
@@ -20,7 +20,7 @@ class ChatSession:
     """Modelo para una sesión de chat."""
     id: int
     user_id: str
-    session_name: Optional[str]
+    session_name: str | None
     created_at: str
     message_count: int = 0
 
@@ -31,8 +31,8 @@ class ChatRequest:
     session_id: int
     message: str
     mode: AgentMode
-    file_id: Optional[int] = None
-    selected_section_ids: Optional[List[int]] = None
+    file_id: int | None = None
+    selected_section_ids: list[int] | None = None
 
 
 @dataclass
@@ -40,4 +40,4 @@ class ChatResponse:
     """Modelo para una respuesta de chat."""
     content: str
     success: bool
-    error: Optional[str] = None
+    error: str | None = None

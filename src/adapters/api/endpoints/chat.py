@@ -4,6 +4,7 @@ Endpoints de la API para gestionar el chat.
 MIGRADO: Usa ChatServiceV2 con arquitectura hexagonal
 """
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from slowapi import Limiter
@@ -53,7 +54,7 @@ def create_new_session(
         return NewSessionResponse(session_id=session.id)
     except Exception as e:
         logger.error(f"Error al crear sesión: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error interno al crear la sesión")
+        raise HTTPException(status_code=500, detail="Error interno al crear la sesión") from None
 
 
 @router.post("/chat", response_model=ChatResponse)

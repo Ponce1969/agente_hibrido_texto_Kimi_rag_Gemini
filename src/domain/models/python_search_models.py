@@ -5,7 +5,7 @@ from dataclasses import dataclass
 @dataclass
 class PythonSource:
     """Fuente de información Python con metadatos de confiabilidad."""
-    
+
     url: str
     title: str
     snippet: str

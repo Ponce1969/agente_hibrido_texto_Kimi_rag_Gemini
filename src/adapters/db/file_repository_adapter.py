@@ -3,15 +3,17 @@ Adaptador de repositorio de archivos para SQL (SQLite).
 """
 from __future__ import annotations
 
-from typing import Optional
-from sqlmodel import Session as SQLSession, select
-from datetime import datetime, UTC
 import uuid
+from datetime import UTC, datetime
 
-from src.domain.models.file_models import FileDocument, FileSection as DomainSection, FileStatus
-from src.domain.ports.file_repository_port import FileRepositoryPort
+from sqlmodel import Session as SQLSession
+from sqlmodel import select
+
 from src.adapters.db.database import engine as sqlite_engine
-from src.adapters.db.file_models import FileUpload, FileSection
+from src.adapters.db.file_models import FileSection, FileUpload
+from src.domain.models.file_models import FileDocument, FileStatus
+from src.domain.models.file_models import FileSection as DomainSection
+from src.domain.ports.file_repository_port import FileRepositoryPort
 
 
 class SQLFileRepository(FileRepositoryPort):
@@ -53,7 +55,7 @@ class SQLFileRepository(FileRepositoryPort):
                 session.add(db_section)
             session.commit()
 
-    def get_file(self, file_id: int) -> Optional[FileDocument]:
+    def get_file(self, file_id: int) -> FileDocument | None:
         with SQLSession(sqlite_engine) as session:
             db_file = session.get(FileUpload, file_id)
             return self._to_domain(db_file) if db_file else None
@@ -72,13 +74,13 @@ class SQLFileRepository(FileRepositoryPort):
             ).all()
             return [
                 DomainSection(
-                    id=sec.id, file_id=str(sec.file_id), text="", 
+                    id=sec.id, file_id=str(sec.file_id), text="",
                     page_number=sec.start_page, chunk_index=0
                 )
                 for sec in db_sections
             ]
 
-    def update_file_status(self, file_id: int, status: FileStatus, error_message: Optional[str] = None) -> None:
+    def update_file_status(self, file_id: int, status: FileStatus, error_message: str | None = None) -> None:
         with SQLSession(sqlite_engine) as session:
             db_file = session.get(FileUpload, file_id)
             if db_file:
@@ -101,10 +103,10 @@ class SQLFileRepository(FileRepositoryPort):
     def delete_file(self, file_id: int) -> bool:
         """
         Elimina un archivo y sus secciones asociadas.
-        
+
         Args:
             file_id: ID del archivo a eliminar
-            
+
         Returns:
             True si se eliminó correctamente, False si no existía
         """
@@ -115,7 +117,7 @@ class SQLFileRepository(FileRepositoryPort):
             ).all()
             for section in sections:
                 session.delete(section)
-            
+
             # Eliminar archivo
             db_file = session.get(FileUpload, file_id)
             if db_file:

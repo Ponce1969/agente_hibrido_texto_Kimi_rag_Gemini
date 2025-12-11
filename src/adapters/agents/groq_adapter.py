@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from src.domain.ports.llm_port import LLMPort
-from src.adapters.config.settings import settings
 from src.adapters.agents.prompt_manager import prompt_manager
+from src.adapters.config.settings import settings
+from src.domain.ports.llm_port import LLMPort
 
 if TYPE_CHECKING:
     from src.domain.models import ChatMessage
@@ -22,23 +22,23 @@ if TYPE_CHECKING:
 class GroqAdapter(LLMPort):
     """
     Adaptador de Groq que implementa el puerto LLMPort.
-    
+
     Características:
     - Usa API de Groq (Kimi-K2)
     - Sistema de caché de prompts integrado
     - Limitación de historial automática
     - Métricas de tokens
     """
-    
+
     def __init__(self, client: httpx.AsyncClient) -> None:
         """
         Inicializa el adaptador de Groq.
-        
+
         Args:
             client: Cliente HTTP asíncrono para hacer requests
         """
         self.client = client
-    
+
     async def get_chat_completion(
         self,
         system_prompt: str,
@@ -52,7 +52,7 @@ class GroqAdapter(LLMPort):
     ) -> tuple[str, int | None]:
         """
         Obtiene una respuesta del modelo Kimi-K2 via Groq.
-        
+
         Args:
             system_prompt: Prompt del sistema
             messages: Historial de mensajes
@@ -61,32 +61,32 @@ class GroqAdapter(LLMPort):
             session_id: ID de sesión para caché
             agent_mode: Modo del agente para caché
             use_cache: Si usar sistema de caché
-            
+
         Returns:
             Tupla (respuesta, tokens_consumidos)
         """
         tokens_consumed = None
-        
+
         # Sistema de caché de prompts
         if use_cache and session_id and agent_mode:
             from src.adapters.agents.prompts import AgentMode
-            
+
             # Convertir string a AgentMode si es necesario
             try:
                 mode_enum = AgentMode(agent_mode) if isinstance(agent_mode, str) else agent_mode
             except ValueError:
                 mode_enum = None
-            
+
             if mode_enum:
                 # Obtener prompt optimizado
                 optimized_prompt, is_cached = prompt_manager.get_prompt(
                     session_id=session_id,
                     agent_mode=mode_enum
                 )
-                
+
                 # Limitar historial
                 limited_messages = prompt_manager.limit_history(messages)
-                
+
                 # Registrar métricas
                 user_msg = messages[-1].content if messages else ""
                 metrics = prompt_manager.record_metrics(
@@ -96,12 +96,12 @@ class GroqAdapter(LLMPort):
                     user_message=user_msg,
                     is_cached=is_cached
                 )
-                
+
                 # Usar prompt y mensajes optimizados
                 system_prompt = optimized_prompt
                 messages = limited_messages
                 tokens_consumed = metrics.total_tokens if metrics else None
-        
+
         # Construir mensajes para API
         api_messages = [
             {"role": "system", "content": system_prompt},
@@ -110,7 +110,7 @@ class GroqAdapter(LLMPort):
                 for msg in messages
             ],
         ]
-        
+
         # Llamar a API de Groq
         response = await self.client.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -127,12 +127,12 @@ class GroqAdapter(LLMPort):
             timeout=httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=10.0),
         )
         response.raise_for_status()
-        
+
         data = response.json()
         content = data["choices"][0]["message"]["content"]
-        
+
         return content, tokens_consumed
-    
+
     async def get_chat_completion_stream(
         self,
         system_prompt: str,
@@ -143,7 +143,7 @@ class GroqAdapter(LLMPort):
     ) -> str:
         """
         Obtiene respuesta en modo streaming (no implementado aún).
-        
+
         Por ahora retorna la respuesta completa.
         """
         response, _ = await self.get_chat_completion(
@@ -154,11 +154,11 @@ class GroqAdapter(LLMPort):
             use_cache=False,  # No usar caché en streaming
         )
         return response
-    
+
     def estimate_tokens(self, text: str) -> int:
         """
         Estima tokens usando aproximación simple.
-        
+
         Regla: ~4 caracteres = 1 token
         """
         return len(text) // 4

@@ -4,13 +4,14 @@ Endpoints de autenticación (registro y login).
 Implementa los endpoints para gestionar usuarios siguiendo arquitectura hexagonal.
 """
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.domain.models.user import UserCreate, UserLogin, TokenResponse, UserResponse
-from src.application.services.auth_service import AuthService
 from src.adapters.dependencies import get_auth_service
+from src.application.services.auth_service import AuthService
+from src.domain.models.user import TokenResponse, UserCreate, UserLogin, UserResponse
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,11 @@ async def register(
 ):
     """
     Registra un nuevo usuario en el sistema.
-    
+
     - **email**: Email único del usuario
     - **password**: Contraseña (mínimo 8 caracteres)
     - **full_name**: Nombre completo (opcional)
-    
+
     Returns:
         Token de acceso y datos del usuario creado
     """
@@ -43,7 +44,7 @@ async def register(
             password=user_data.password,
             full_name=user_data.full_name
         )
-        
+
         return TokenResponse(
             access_token=result["access_token"],
             token_type=result["token_type"],
@@ -69,10 +70,10 @@ async def login(
 ):
     """
     Autentica un usuario y genera un token de acceso.
-    
+
     - **email**: Email del usuario
     - **password**: Contraseña
-    
+
     Returns:
         Token de acceso y datos del usuario
     """
@@ -81,7 +82,7 @@ async def login(
             email=credentials.email,
             password=credentials.password
         )
-        
+
         return TokenResponse(
             access_token=result["access_token"],
             token_type=result["token_type"],
@@ -109,7 +110,7 @@ async def get_current_user(
 ):
     """
     Obtiene los datos del usuario autenticado actual.
-    
+
     Requiere token de autenticación en el header Authorization.
     """
     # TODO: Implementar extracción y validación del token

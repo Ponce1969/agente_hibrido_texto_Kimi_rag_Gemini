@@ -9,9 +9,9 @@ Tipado estricto para mypy --strict con Python 3.12+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
-from typing import Any
+from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 
 
 class MessageRole(str, Enum):
@@ -296,16 +296,16 @@ class FileSection:
 @dataclass
 class ChatSessionCreate:
     """DTO para crear una nueva sesión de chat."""
-    
+
     title: str
     user_id: str = "default_user"
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def __post_init__(self) -> None:
         """Validación después de inicialización."""
         if not self.title.strip():
             raise ValueError("El título no puede estar vacío")
-        
+
         if len(self.title) > 200:
             raise ValueError("El título es demasiado largo")
 
@@ -313,20 +313,20 @@ class ChatSessionCreate:
 @dataclass
 class ChatMessageCreate:
     """DTO para crear un nuevo mensaje."""
-    
+
     session_id: str
     role: MessageRole
     content: str
     message_index: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def __post_init__(self) -> None:
         """Validación después de inicialización."""
         if not self.content.strip():
             raise ValueError("El contenido no puede estar vacío")
-        
+
         if len(self.content) > 100000:
             raise ValueError("El contenido es demasiado largo")
-        
+
         if self.message_index < 0:
             raise ValueError("El índice debe ser no negativo")

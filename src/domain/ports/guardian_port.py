@@ -33,26 +33,26 @@ class GuardianPort(ABC):
     Puerto de dominio para servicios de moderación/seguridad.
     Permite cambiar la implementación sin afectar la lógica de negocio.
     """
-    
+
     @abstractmethod
     async def check_message(self, text: str, user_id: str | None = None) -> GuardianResult:
         """
         Analiza un mensaje para detectar amenazas.
-        
+
         Args:
             text: Mensaje a analizar
             user_id: ID del usuario (opcional, para tracking)
-            
+
         Returns:
             GuardianResult con el análisis
         """
         pass
-    
+
     @abstractmethod
     async def is_enabled(self) -> bool:
         """Verifica si el Guardian está activo."""
         pass
-    
+
     @abstractmethod
     async def get_stats(self) -> dict:
         """Obtiene estadísticas de uso del Guardian."""

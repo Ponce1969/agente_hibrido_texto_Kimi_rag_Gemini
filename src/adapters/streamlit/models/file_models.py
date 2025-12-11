@@ -2,8 +2,8 @@
 Modelos para el sistema de archivos en Streamlit.
 """
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
 from enum import Enum
+from typing import Any
 
 
 class FileStatus(Enum):
@@ -30,11 +30,11 @@ class FileUploadInfo:
     filename: str
     status: str
     created_at: str
-    pages_processed: Optional[int] = None
-    total_pages: Optional[int] = None
-    size_bytes: Optional[int] = None
-    mime_type: Optional[str] = None
-    error_message: Optional[str] = None
+    pages_processed: int | None = None
+    total_pages: int | None = None
+    size_bytes: int | None = None
+    mime_type: str | None = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -44,7 +44,7 @@ class FileProgress:
     status: FileStatus
     pages_processed: int
     total_pages: int
-    detail: Optional[Dict[str, Any]] = None
+    detail: dict[str, Any] | None = None
 
 
 @dataclass
@@ -55,7 +55,7 @@ class FileSection:
     title: str
     start_page: int
     end_page: int
-    content_preview: Optional[str] = None
+    content_preview: str | None = None
 
 
 @dataclass

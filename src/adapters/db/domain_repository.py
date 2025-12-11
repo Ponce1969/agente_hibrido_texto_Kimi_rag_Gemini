@@ -7,23 +7,20 @@ tecnología específica de persistencia.
 from __future__ import annotations
 
 import uuid
-from typing import List, Optional, Dict, Any
-from datetime import datetime, UTC
-from sqlalchemy import select, and_, or_, desc, func
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db.models import ChatSession as DBSession, ChatMessage as DBMessage
-from ..db.models import FileUpload as DBFile, FileSection as DBFileSection
-from ..config.settings import settings
-from src.domain import (
-    ChatSession,
-    ChatMessage,
-    FileDocument,
-    FileSection,
-    MessageRole
-)
-from src.domain.ports.repository_port import ChatRepositoryPort
+from src.domain import ChatMessage, ChatSession, FileDocument, FileSection, MessageRole
 from src.domain.ports.file_repository_port import FileRepositoryPort
+from src.domain.ports.repository_port import ChatRepositoryPort
+
+from ..db.models import ChatMessage as DBMessage
+from ..db.models import ChatSession as DBSession
+from ..db.models import FileSection as DBFileSection
+from ..db.models import FileUpload as DBFile
 
 # Aliases temporales para compatibilidad
 ChatRepositoryInterface = ChatRepositoryPort
@@ -38,7 +35,7 @@ class SQLChatRepository(ChatRepositoryInterface):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_session(self, session_id: int) -> Optional[ChatSession]:
+    async def get_session(self, session_id: int) -> ChatSession | None:
         """Obtiene una sesión por ID."""
         result = await self.session.execute(
             select(DBSession).where(DBSession.id == session_id)
@@ -50,7 +47,7 @@ class SQLChatRepository(ChatRepositoryInterface):
 
         return self._db_to_domain_session(db_session)
 
-    async def get_session_by_user(self, user_id: str, session_id: int) -> Optional[ChatSession]:
+    async def get_session_by_user(self, user_id: str, session_id: int) -> ChatSession | None:
         """Obtiene una sesión específica de un usuario."""
         result = await self.session.execute(
             select(DBSession).where(
@@ -64,11 +61,11 @@ class SQLChatRepository(ChatRepositoryInterface):
 
         return self._db_to_domain_session(db_session)
 
-    async def get_user_sessions(self, user_id: str, active_only: bool = True) -> List[ChatSession]:
+    async def get_user_sessions(self, user_id: str, active_only: bool = True) -> list[ChatSession]:
         """Obtiene todas las sesiones de un usuario."""
         query = select(DBSession).where(DBSession.user_id == user_id)
         if active_only:
-            query = query.where(DBSession.is_active == True)
+            query = query.where(DBSession.is_active)
 
         query = query.order_by(desc(DBSession.updated_at))
 
@@ -77,7 +74,7 @@ class SQLChatRepository(ChatRepositoryInterface):
 
         return [self._db_to_domain_session(db) for db in db_sessions]
 
-    async def create_session(self, user_id: str, session_name: Optional[str] = None) -> ChatSession:
+    async def create_session(self, user_id: str, session_name: str | None = None) -> ChatSession:
         """Crea una nueva sesión de chat."""
         db_session = DBSession(
             user_id=user_id,
@@ -147,9 +144,9 @@ class SQLChatRepository(ChatRepositoryInterface):
     async def get_session_messages(
         self,
         session_id: int,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None
-    ) -> List[ChatMessage]:
+        limit: int | None = None,
+        offset: int | None = None
+    ) -> list[ChatMessage]:
         """Obtiene los mensajes de una sesión."""
         query = select(DBMessage).where(DBMessage.session_id == session_id)
 
@@ -165,7 +162,7 @@ class SQLChatRepository(ChatRepositoryInterface):
 
         return [self._db_to_domain_message(db) for db in db_messages]
 
-    async def get_message(self, message_id: int) -> Optional[ChatMessage]:
+    async def get_message(self, message_id: int) -> ChatMessage | None:
         """Obtiene un mensaje específico."""
         result = await self.session.execute(
             select(DBMessage).where(DBMessage.id == message_id)
@@ -191,7 +188,7 @@ class SQLChatRepository(ChatRepositoryInterface):
         await self.session.commit()
         return True
 
-    async def get_recent_sessions(self, limit: int = 10) -> List[ChatSession]:
+    async def get_recent_sessions(self, limit: int = 10) -> list[ChatSession]:
         """Obtiene las sesiones más recientes."""
         result = await self.session.execute(
             select(DBSession)
@@ -239,7 +236,7 @@ class SQLFileRepository(FileRepositoryInterface):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_file(self, file_id: int) -> Optional[FileDocument]:
+    async def get_file(self, file_id: int) -> FileDocument | None:
         """Obtiene un archivo por ID."""
         result = await self.session.execute(
             select(DBFile).where(DBFile.id == file_id)
@@ -251,7 +248,7 @@ class SQLFileRepository(FileRepositoryInterface):
 
         return self._db_to_domain_file(db_file)
 
-    async def get_user_files(self, user_id: str) -> List[FileDocument]:
+    async def get_user_files(self, user_id: str) -> list[FileDocument]:
         """Obtiene todos los archivos de un usuario."""
         # TODO: Implementar relación user-files
         result = await self.session.execute(select(DBFile))
@@ -339,7 +336,7 @@ class SQLFileRepository(FileRepositoryInterface):
         section.id = db_section.id
         return section
 
-    async def get_file_sections(self, file_id: int) -> List[FileSection]:
+    async def get_file_sections(self, file_id: int) -> list[FileSection]:
         """Obtiene todas las secciones de un archivo."""
         result = await self.session.execute(
             select(DBFileSection).where(DBFileSection.file_id == file_id)
@@ -348,7 +345,7 @@ class SQLFileRepository(FileRepositoryInterface):
 
         return [self._db_to_domain_section(db) for db in db_sections]
 
-    async def get_section(self, section_id: int) -> Optional[FileSection]:
+    async def get_section(self, section_id: int) -> FileSection | None:
         """Obtiene una sección específica."""
         result = await self.session.execute(
             select(DBFileSection).where(DBFileSection.id == section_id)
@@ -379,7 +376,7 @@ class SQLFileRepository(FileRepositoryInterface):
         file_id: int,
         start_page: int,
         end_page: int
-    ) -> List[FileSection]:
+    ) -> list[FileSection]:
         """Obtiene secciones en un rango de páginas."""
         result = await self.session.execute(
             select(DBFileSection).where(
@@ -399,7 +396,7 @@ class SQLFileRepository(FileRepositoryInterface):
         file_id: int,
         query: str,
         limit: int = 10
-    ) -> List[FileSection]:
+    ) -> list[FileSection]:
         """Busca secciones que contengan texto específico."""
         # TODO: Implementar búsqueda full-text
         result = await self.session.execute(
@@ -409,7 +406,7 @@ class SQLFileRepository(FileRepositoryInterface):
 
         return [self._db_to_domain_section(db) for db in db_sections]
 
-    async def get_files_by_status(self, status: str) -> List[FileDocument]:
+    async def get_files_by_status(self, status: str) -> list[FileDocument]:
         """Obtiene archivos por estado de procesamiento."""
         result = await self.session.execute(
             select(DBFile).where(DBFile.status == status)
@@ -418,7 +415,7 @@ class SQLFileRepository(FileRepositoryInterface):
 
         return [self._db_to_domain_file(db) for db in db_files]
 
-    async def get_processing_stats(self) -> Dict[str, int]:
+    async def get_processing_stats(self) -> dict[str, int]:
         """Obtiene estadísticas de procesamiento de archivos."""
         result = await self.session.execute(
             select(
@@ -428,7 +425,7 @@ class SQLFileRepository(FileRepositoryInterface):
         )
         stats = result.all()
 
-        return {status: count for status, count in stats}
+        return dict(stats)
 
     def _db_to_domain_file(self, db_file: DBFile) -> FileDocument:
         """Convierte un modelo de DB a modelo de dominio."""
@@ -466,18 +463,18 @@ class InMemoryAgentRepository(AgentRepositoryInterface):
             # ... otros agentes
         }
 
-    async def get_agent_config(self, agent_mode: str) -> Dict[str, Any]:
+    async def get_agent_config(self, agent_mode: str) -> dict[str, Any]:
         return self._configs.get(agent_mode, {})
 
-    async def save_agent_config(self, agent_mode: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def save_agent_config(self, agent_mode: str, config: dict[str, Any]) -> dict[str, Any]:
         self._configs[agent_mode] = config
         return config
 
-    async def get_available_agents(self) -> List[str]:
+    async def get_available_agents(self) -> list[str]:
         return list(self._configs.keys())
 
-    async def get_agent_usage_stats(self) -> Dict[str, int]:
-        return {agent: 0 for agent in self._configs.keys()}
+    async def get_agent_usage_stats(self) -> dict[str, int]:
+        return dict.fromkeys(self._configs.keys(), 0)
 
     async def log_agent_interaction(
         self,
@@ -503,14 +500,14 @@ class InMemoryAnalyticsRepository(AnalyticsRepositoryInterface):
     ) -> None:
         pass
 
-    async def get_daily_stats(self, date: datetime) -> Dict[str, Any]:
+    async def get_daily_stats(self, date: datetime) -> dict[str, Any]:
         return {"total_interactions": 0, "avg_response_time": 0}
 
-    async def get_user_stats(self, user_id: str) -> Dict[str, Any]:
+    async def get_user_stats(self, user_id: str) -> dict[str, Any]:
         return {"total_sessions": 0, "total_messages": 0}
 
-    async def get_popular_agents(self, limit: int = 5) -> List[Dict[str, Any]]:
+    async def get_popular_agents(self, limit: int = 5) -> list[dict[str, Any]]:
         return []
 
-    async def get_file_processing_stats(self) -> Dict[str, Any]:
+    async def get_file_processing_stats(self) -> dict[str, Any]:
         return {"total_files": 0, "processed_files": 0}

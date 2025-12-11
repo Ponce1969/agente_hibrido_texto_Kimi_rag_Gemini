@@ -3,7 +3,7 @@ Puerto del dominio para el repositorio de archivos.
 """
 from __future__ import annotations
 
-from typing import Protocol, Optional
+from typing import Protocol
 
 from src.domain.models.file_models import FileDocument, FileSection, FileStatus
 
@@ -19,10 +19,10 @@ class FileRepositoryPort(Protocol):
         """Añade registros de sección a un archivo."""
         ...
 
-    def get_file(self, file_id: int) -> Optional[FileDocument]:
+    def get_file(self, file_id: int) -> FileDocument | None:
         """Obtiene un documento de archivo por su ID."""
         ...
-    
+
     def list_files(self, limit: int = 20) -> list[FileDocument]:
         """Lista los archivos subidos recientemente."""
         ...
@@ -31,14 +31,14 @@ class FileRepositoryPort(Protocol):
         """Obtiene las secciones de un archivo."""
         ...
 
-    def update_file_status(self, file_id: int, status: FileStatus, error_message: Optional[str] = None) -> None:
+    def update_file_status(self, file_id: int, status: FileStatus, error_message: str | None = None) -> None:
         """Actualiza el estado y otros metadatos de un archivo."""
         ...
-    
+
     def update_file_pages(self, file_id: int, total_pages: int, pages_processed: int) -> None:
         """Actualiza el número de páginas de un archivo."""
         ...
-    
+
     def delete_file(self, file_id: int) -> bool:
         """Elimina un archivo y sus secciones asociadas."""
         ...

@@ -1,22 +1,29 @@
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+from __future__ import annotations
 
-from src.adapters.api.endpoints import chat
-from src.adapters.api.endpoints import files
-from src.adapters.api.endpoints import pg
-from src.adapters.api.endpoints import embeddings
-from src.adapters.api.endpoints import chat_bear
-from src.adapters.api.endpoints import metrics
-from src.adapters.api.endpoints import auth
-from src.adapters.api.endpoints import guardian
-from src.adapters.db.database import create_db_and_tables
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+from src.adapters.api.endpoints import (
+    auth,
+    chat,
+    chat_bear,
+    embeddings,
+    files,
+    guardian,
+    hibrido_status,
+    llm_gateway,
+    metrics,
+    pg,
+)
 from src.adapters.api.middleware.guardian_middleware import GuardianMiddleware
-from src.adapters.dependencies import get_guardian_service_for_middleware
 from src.adapters.config.settings import settings
+from src.adapters.db.database import create_db_and_tables
+from src.adapters.dependencies import get_guardian_service_for_middleware
 
 
 @asynccontextmanager
@@ -24,7 +31,7 @@ async def lifespan(app: FastAPI):
     # Al iniciar la aplicación
     print("Iniciando aplicación y creando tablas de la base de datos...")
     create_db_and_tables()
-    
+
     # Crear tabla de embeddings (pgvector)
     try:
         from src.adapters.db.embeddings_repository import EmbeddingsRepository
@@ -33,7 +40,7 @@ async def lifespan(app: FastAPI):
         print("✅ Tabla document_chunks creada/verificada con pgvector")
     except Exception as e:
         print(f"⚠️ No se pudo crear tabla de embeddings: {e}")
-    
+
     yield
     # Al apagar la aplicación (si se necesita limpieza)
     print("Apagando aplicación...")
@@ -83,11 +90,13 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
 app.include_router(files.router, prefix="/api/v1", tags=["Files"])
-app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"]) 
+app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"])
 app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"])
 app.include_router(chat_bear.router, prefix="/api/v1")  # Bear Search (tag definido en el router)
 app.include_router(metrics.router, prefix="/api/v1")  # Métricas de tokens (tag definido en el router)
-app.include_router(guardian.router, prefix="/api/v1")  # Guardian de seguridad 
+app.include_router(guardian.router, prefix="/api/v1")  # Guardian de seguridad
+app.include_router(hibrido_status.router, prefix="/api/v1")  # Sistema Híbrido Mejorado
+app.include_router(llm_gateway.router, prefix="/api/internal", tags=["LLM Gateway - Internal"])  # Gateway para modelos locales
 
 # Endpoint de health check
 @app.get("/health", tags=["Monitoring"])

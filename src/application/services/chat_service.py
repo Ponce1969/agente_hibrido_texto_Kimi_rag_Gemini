@@ -13,17 +13,17 @@ import logging
 import re
 import time
 import traceback
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from src.domain.models import ChatMessageCreate, ChatSessionCreate, MessageRole
 from src.application.services.metrics_service import MetricsService
+from src.domain.models import ChatMessageCreate, ChatSessionCreate, MessageRole
 
 if TYPE_CHECKING:
-    from src.domain.models import ChatMessage, ChatSession
-    from src.domain.ports import ChatRepositoryPort, EmbeddingsPort, LLMPort
-    from src.domain.ports.python_search_port import PythonSearchPort, PythonSource
     from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
+    from src.domain.models import ChatMessage, ChatSession
+    from src.domain.ports import ChatRepositoryPort, LLMPort
+    from src.domain.ports.python_search_port import PythonSearchPort, PythonSource
 
 
 logger = logging.getLogger(__name__)
@@ -32,17 +32,17 @@ logger = logging.getLogger(__name__)
 class ChatServiceV2:
     """
     Servicio de aplicación para chat siguiendo arquitectura hexagonal.
-    
+
     Este servicio orquesta la lógica de negocio sin conocer detalles
     de implementación (Groq, Gemini, SQLite, PostgreSQL, etc.).
-    
+
     Principios:
     - Depende SOLO de puertos (interfaces)
     - No importa de adapters
     - Lógica de negocio pura
     - Fácil de testear con mocks
     """
-    
+
     def __init__(
         self,
         llm_client: LLMPort,
@@ -55,7 +55,7 @@ class ChatServiceV2:
     ) -> None:
         """
         Inicializa el servicio de chat.
-        
+
         Args:
             llm_client: Cliente LLM principal (ej: Groq)
             repository: Repositorio de chat
@@ -69,49 +69,51 @@ class ChatServiceV2:
         self.fallback_llm = fallback_llm
         self.embeddings = embeddings_service
         self.python_search = python_search
-        
+
         # Servicio de métricas (inyectado o crear uno por defecto)
         if metrics_service is None:
             # Importación local para evitar dependencia circular
-            from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
+            from src.adapters.repositories.metrics_repository import (
+                SQLModelMetricsRepository,
+            )
             self.metrics = MetricsService(repository=SQLModelMetricsRepository())
         else:
             self.metrics = metrics_service
-        
+
         # Almacenar últimas fuentes usadas para feedback
         self.last_search_sources: list[PythonSource] = []
-    
+
     def create_session(self, session_data: ChatSessionCreate) -> ChatSession:
         """
         Crea una nueva sesión de chat.
-        
+
         Args:
             session_data: Datos para crear la sesión
-            
+
         Returns:
             Sesión creada
         """
         return self.repo.create_session(session_data)
-    
+
     def get_session(self, session_id: str) -> ChatSession | None:
         """
         Obtiene una sesión por su ID.
-        
+
         Args:
             session_id: ID de la sesión
-            
+
         Returns:
             Sesión encontrada o None
         """
         return self.repo.get_session(session_id)
-    
+
     def list_sessions(self, *, limit: int = 50) -> list[ChatSession]:
         """
         Lista las sesiones de chat.
-        
+
         Args:
             limit: Número máximo de sesiones
-            
+
         Returns:
             Lista de sesiones
         """
@@ -137,7 +139,7 @@ class ChatServiceV2:
         """Lista las sesiones de un usuario con el conteo de mensajes."""
         all_sessions = self.repo.list_sessions(limit=limit * 2)
         user_sessions = [s for s in all_sessions if s.user_id == user_id]
-        
+
         detailed_sessions = []
         for s in user_sessions[:limit]:
             message_count = self.repo.count_session_messages(s.id)
@@ -153,7 +155,7 @@ class ChatServiceV2:
             )
         return detailed_sessions
 
-    
+
     async def handle_message(
         self,
         session_id: str,
@@ -168,7 +170,7 @@ class ChatServiceV2:
     ) -> str:
         """
         Maneja un mensaje del usuario y retorna la respuesta del LLM.
-        
+
         Args:
             session_id: ID de la sesión
             user_message: Mensaje del usuario
@@ -178,10 +180,10 @@ class ChatServiceV2:
             temperature: Temperatura del modelo
             use_fallback_on_error: Si usar LLM de respaldo en caso de error
             use_internet: Si usar búsqueda en Internet
-            
+
         Returns:
             Respuesta del LLM
-            
+
         Raises:
             ValueError: Si la sesión no existe
         """
@@ -205,7 +207,7 @@ class ChatServiceV2:
             session = self.repo.get_session(session_id)
             if not session:
                 raise ValueError(f"Sesión {session_id} no encontrada")
-        
+
         # 2. Guardar mensaje del usuario
         user_msg_data = ChatMessageCreate(
             session_id=session_id,
@@ -213,10 +215,10 @@ class ChatServiceV2:
             content=user_message,
         )
         self.repo.add_message(user_msg_data)
-        
+
         # 3. Obtener historial de mensajes
         history = self.repo.get_session_messages(session_id)
-        
+
         # 4. Buscar contexto RAG si hay file_id
         rag_context = ""
         if file_id and self.embeddings:
@@ -224,7 +226,7 @@ class ChatServiceV2:
                 # 🎯 BÚSQUEDA ADAPTATIVA: Ajustar top_k según complejidad de la pregunta
                 # Preguntas complejas necesitan más contexto para aprovechar ventana de Gemini
                 from src.adapters.config.settings import settings
-                
+
                 question_length = len(user_message)
                 is_complex = any(word in user_message.lower() for word in [
                     # Análisis y comparación
@@ -256,7 +258,7 @@ class ChatServiceV2:
                     'optimización', 'rendimiento', 'mejor práctica', 'mejores prácticas',
                     'arquitectura', 'diseño', 'patrones', 'estrategias'
                 ])
-                
+
                 # Ajustar top_k dinámicamente usando configuración
                 if is_complex or question_length > 100:
                     top_k = settings.rag_complex_top_k  # Preguntas complejas
@@ -270,39 +272,41 @@ class ChatServiceV2:
                     top_k = settings.rag_simple_top_k  # Preguntas simples
                     limit = settings.rag_simple_limit
                     complexity = "simple"
-                
+
                 logger.info(f"🎯 Búsqueda adaptativa ({complexity}): top_k={top_k}, limit={limit} chars")
-                
+
                 # Buscar chunks relevantes
+                # Búsqueda más precisa para definiciones técnicas
                 results = await self.embeddings.search_similar(
                     query=user_message,
                     file_id=str(file_id),
-                    top_k=top_k
+                    top_k=8,  # Más chunks para mejor contexto
+                    min_similarity=0.65,  # Umbral más estricto
                 )
-                
+
                 if results:
                     logger.info(f"✅ RAG: {len(results)} chunks encontrados para file_id={file_id}")
                     acc = 0
                     parts: list[str] = []
-                    
+
                     for r in results:
                         remaining = limit - acc
                         if remaining <= 100:  # Mínimo para que valga la pena
                             break
-                        
+
                         # EmbeddingsServiceV2 retorna 'text', no 'content'
                         content = r.get('text', '')
                         chunk_idx = r.get('chunk_index', 0)
                         similarity = r.get('similarity', 0.0)
-                        
+
                         if not content:
                             logger.warning(f"⚠️ Chunk {chunk_idx} sin contenido: {r.keys()}")
                             continue
-                        
+
                         snippet = content[:remaining]
                         parts.append(f"[chunk {chunk_idx}, score={similarity:.3f}]\n{snippet}")
                         acc += len(snippet)
-                    
+
                     rag_context = "\n\n".join(parts)
                     rag_chunks_count = len(parts)  # Guardar para métricas
                     model_used = "gemini-2.5-flash"  # RAG usa Gemini
@@ -313,27 +317,29 @@ class ChatServiceV2:
             except Exception as e:
                 logger.error(f"❌ Error en búsqueda RAG: {e}")
                 logger.error(traceback.format_exc())
-        
+
         # 5. Construir system prompt
         system_prompt = self._get_system_prompt(agent_mode)
-        
+
         # Si hay contexto RAG, PRIORIZAR el contexto del PDF
         if rag_context:
-            # Prompt EXPLÍCITO que identifica el archivo
+            # Prompt PRECISO para respuestas literales y detalladas
             system_prompt = (
-                f"Eres un asistente experto en análisis de documentos. El usuario ha cargado un documento PDF (identificado como file_id={file_id}).\n\n"
-                "**INSTRUCCIONES CRÍTICAS:**\n"
-                f"1. Tienes acceso COMPLETO al contenido del documento file_id={file_id}\n"
-                "2. El contenido del documento se proporciona a continuación\n"
-                "3. Cuando el usuario pregunte por 'file_id={file_id}', se refiere al documento que tienes aquí\n"
-                "4. NUNCA digas 'no tengo acceso' - SÍ tienes el documento completo abajo\n\n"
+                f"Eres un asistente experto en análisis técnico de documentos. El usuario ha cargado el documento PDF (file_id={file_id}).\n\n"
+                "**INSTRUCCIONES CRÍTICAS - RESPUESTAS PRECISAS:**\n"
+                f"1. Tienes acceso COMPLETO al documento file_id={file_id}\n"
+                "2. Responde con la DEFINICIÓN EXACTA del texto, manteniendo términos técnicos\n"
+                "3. PRESERVA todos los detalles: figuras, números, términos geométricos, ejemplos\n"
+                "4. Para definiciones, cita LITERALMENTE y luego explica si es necesario\n"
+                "5. NUNCA simplifiques conceptos técnicos - mantén la precisión del autor\n"
+                "6. Si menciona figuras, números específicos o términos técnicos, inclúyelos todos\n\n"
                 f"--- CONTENIDO COMPLETO DEL DOCUMENTO file_id={file_id} ---\n\n"
                 f"{rag_context}\n\n"
                 "--- FIN DEL DOCUMENTO ---\n\n"
-                "Responde todas las preguntas basándote en este contenido. Si te preguntan si ves el documento, responde SÍ."
+                "Responde basándote en este contenido con máxima precisión técnica."
             )
             logger.debug(f"🎯 System prompt RAG: {len(system_prompt)} caracteres")
-        
+
         # 6. Obtener respuesta inicial del LLM
         initial_response, tokens = await self._get_llm_response(
             system_prompt=system_prompt,
@@ -345,21 +351,21 @@ class ChatServiceV2:
             use_fallback_on_error=use_fallback_on_error,
             has_rag=bool(rag_context),
         )
-        
+
         # 7. Verificar si necesita búsqueda en Internet
         if use_internet and self.python_search and not rag_context:
-            logger.info(f"🔍 Verificando si necesita búsqueda web...")
+            logger.info("🔍 Verificando si necesita búsqueda web...")
             if self._should_search_internet(user_message, initial_response):
-                logger.info(f"✅ Kimi solicitó búsqueda web. Activando Brave Search...")
+                logger.info("✅ Kimi solicitó búsqueda web. Activando Brave Search...")
                 sources = await self._search_python_sources(user_message)
                 if sources:
                     used_bear = True  # Marcar uso de Bear API
                     bear_sources_count = len(sources)  # Contar fuentes
                     self.last_search_sources = sources
                     context = self._build_internet_context(sources)
-                    
+
                     logger.info(f"📚 Contexto web construido: {len(context)} caracteres de {len(sources)} fuentes")
-                    
+
                     # Re-llamar al LLM con contexto adicional
                     # IMPORTANTE: Incluir el contexto DENTRO del system prompt para que Kimi lo vea como conocimiento base
                     enriched_prompt = (
@@ -372,9 +378,9 @@ class ChatServiceV2:
                         f"NO digas que no tienes información. "
                         f"Proporciona una respuesta completa basándote en el contexto actualizado que acabas de recibir."
                     )
-                    
-                    logger.info(f"🤖 Re-llamando a Kimi con contexto web...")
-                    
+
+                    logger.info("🤖 Re-llamando a Kimi con contexto web...")
+
                     # Usar el historial completo (el LLM verá el contexto actualizado en el system prompt)
                     response, tokens = await self._get_llm_response(
                         system_prompt=enriched_prompt,
@@ -393,7 +399,7 @@ class ChatServiceV2:
                 response = initial_response
         else:
             response = initial_response
-        
+
         # 8. Guardar respuesta del asistente
         assistant_msg_data = ChatMessageCreate(
             session_id=session_id,
@@ -401,14 +407,14 @@ class ChatServiceV2:
             content=response,
         )
         self.repo.add_message(assistant_msg_data)
-        
+
         # 9. Registrar métricas
         response_time = time.time() - start_time
         try:
             # Extraer tokens de la respuesta (manejar diferentes formatos)
             prompt_tokens = 0
             completion_tokens = 0
-            
+
             if isinstance(tokens, dict):
                 # Formato diccionario (algunos LLMs)
                 prompt_tokens = tokens.get('prompt_tokens', 0)
@@ -423,7 +429,7 @@ class ChatServiceV2:
                 prompt_tokens = len(user_message) // 4  # ~4 chars por token
                 completion_tokens = len(response) // 4
                 logger.debug(f"⚠️ Tokens estimados (LLM no los proporciona): {prompt_tokens + completion_tokens}")
-            
+
             self.metrics.record_agent_usage(
                 session_id=session_id,
                 agent_mode=agent_mode,
@@ -441,22 +447,22 @@ class ChatServiceV2:
         except Exception as e:
             logger.error(f"❌ Error registrando métricas: {e}")
             logger.error(traceback.format_exc())
-        
+
         return response
-    
+
     def _get_system_prompt(self, agent_mode: str) -> str:
         """
         Obtiene el system prompt para un modo de agente.
-        
+
         Args:
             agent_mode: Modo del agente (puede ser el valor del enum o el nombre)
-            
+
         Returns:
             System prompt
         """
         # Importar get_system_prompt de prompts.py
-        from src.adapters.agents.prompts import get_system_prompt, AgentMode
-        
+        from src.adapters.agents.prompts import AgentMode, get_system_prompt
+
         # Instrucción común sobre limitaciones de conocimiento (específica para Kimi-K2)
         knowledge_cutoff = (
             "\n\n**REGLAS DE CONOCIMIENTO (Kimi-K2):**\n"
@@ -471,7 +477,7 @@ class ChatServiceV2:
             "Voy a buscarlo en internet.\"\n\n"
             "En cualquier otro caso, responde normalmente con tu conocimiento de Python."
         )
-        
+
         try:
             # Intentar obtener el prompt del módulo prompts.py
             # get_system_prompt acepta tanto enum como string
@@ -483,13 +489,13 @@ class ChatServiceV2:
             logger.warning(f"⚠️ No se encontró prompt para modo '{agent_mode}', usando Arquitecto por defecto. Error: {e}")
             base_prompt = get_system_prompt(AgentMode.PYTHON_ARCHITECT)
             return base_prompt + knowledge_cutoff
-    
+
     def _should_search_internet(self, user_message: str, kimi_response: str) -> bool:
         """Detecta si Kimi no pudo resolver el problema y necesita búsqueda."""
         # Señal PRINCIPAL: La frase literal que Kimi debe decir según el prompt
         if "voy a buscarlo en internet" in kimi_response.lower():
             return True
-        
+
         # Señales AMPLIADAS de que Kimi no tiene la información
         uncertainty_signals = [
             r"\bno tengo información suficiente\b",  # Frase del prompt
@@ -510,14 +516,14 @@ class ChatServiceV2:
             r"\bno puedo navegar\b",
             r"\bno puedo acceder\b",
         ]
-        
+
         kimis_uncertain = any(
-            re.search(pattern, kimi_response, re.IGNORECASE) 
+            re.search(pattern, kimi_response, re.IGNORECASE)
             for pattern in uncertainty_signals
         )
 
         # Si el usuario menciona GitHub, búsqueda o internet
-        search_mentioned = bool(
+        bool(
             re.search(r"\b(github|buscar|internet|repo|repositorio)\b", user_message, re.IGNORECASE)
         )
 
@@ -525,14 +531,14 @@ class ChatServiceV2:
         traceback_mentioned = bool(
             re.search(r"Traceback|Error|Exception", user_message, re.IGNORECASE)
         )
-        
+
         # Si menciona arquitectura hexagonal o patrones específicos
-        architecture_mentioned = bool(
+        bool(
             re.search(r"\b(arquitectura hexagonal|clean architecture|ports and adapters)\b", user_message, re.IGNORECASE)
         )
-        
+
         # Si pregunta por una API específica
-        api_question = bool(
+        bool(
             re.search(r"\b(cómo usar|cómo funciona|ejemplo de|ejemplos de)\b.*\w+", user_message, re.IGNORECASE)
         )
 
@@ -540,30 +546,28 @@ class ChatServiceV2:
         is_general_query = bool(
             re.search(r"\b(clima|temperatura|hora|dólar|euro|noticias|recetas)\b", user_message, re.IGNORECASE)
         )
-        
+
         # Activar para preguntas sobre versiones, novedades y actualizaciones
-        version_question = bool(
+        bool(
             re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE)
         )
 
         # MODO ULTRA ESTRICTO: SOLO buscar cuando Kimi explícitamente dice "no sé" O hay un error crítico
         # Priorizar la respuesta de Kimi sobre cualquier heurística de la pregunta
         return (kimis_uncertain or traceback_mentioned) and not is_general_query
-        
+
         # MODO AGRESIVO (comentado): Busca también en preguntas de API, versiones, etc.
-        # return (kimis_uncertain or search_mentioned or traceback_mentioned or 
+        # return (kimis_uncertain or search_mentioned or traceback_mentioned or
         #         architecture_mentioned or api_question or version_question) and not is_general_query
 
     async def _search_python_sources(self, user_message: str) -> list[PythonSource]:
         """Ejecuta búsqueda Bear para cualquier pregunta Python válida."""
         if not self.python_search:
             return []
-            
+
         # Determinar tipo de búsqueda basado en el contenido
-        search_type = "general"
-        
+
         if "Traceback" in user_message:
-            search_type = "bug"
             return await self.python_search.search_python_bug(user_message)
         elif re.search(r"\b(cómo usar|ejemplo|funciona)\b.*\w+\.\w+", user_message, re.IGNORECASE):
             api_match = re.search(r"(\w+)\.(\w+)", user_message)
@@ -571,9 +575,8 @@ class ChatServiceV2:
                 module, attr = api_match.groups()
                 return await self.python_search.search_python_api(module, attr)
         elif re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE):
-            search_type = "version"
             return await self.python_search.search_python_best_practice("latest python version release")
-        
+
         # Default: búsqueda general para cualquier pregunta Python válida
         return await self.python_search.search_python_best_practice(user_message)
 
@@ -602,11 +605,11 @@ class ChatServiceV2:
         # IMPORTANTE: Sistema híbrido
         # - RAG (con file_id) → Gemini 2.5 (fallback_llm)
         # - Chat normal → Kimi-K2 (llm)
-        
+
         if has_rag and self.fallback_llm:
             # RAG: Usar Gemini (mejor para contextos largos)
-            logger.info(f"🤖 Usando Gemini 2.5 para RAG")
-            
+            logger.info("🤖 Usando Gemini 2.5 para RAG")
+
             try:
                 response, tokens = await self.fallback_llm.get_chat_completion(
                     system_prompt=system_prompt,
@@ -620,8 +623,8 @@ class ChatServiceV2:
                 raise
         else:
             # Chat normal: Usar Kimi-K2 (más rápido)
-            logger.info(f"🤖 Usando Kimi-K2 para chat normal")
-            
+            logger.info("🤖 Usando Kimi-K2 para chat normal")
+
             try:
                 response, tokens = await self.llm.get_chat_completion(
                     system_prompt=system_prompt,

@@ -2,11 +2,11 @@
 Endpoints de verificación para PostgreSQL + pgvector (opcional).
 Solo operan si `DATABASE_URL_PG` está configurado en el .env.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from sqlalchemy import text
 
-from src.adapters.db.pg_engine import get_pg_engine
 from src.adapters.db.database import sanitize_db_url
+from src.adapters.db.pg_engine import get_pg_engine
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.get("/pg/health", tags=["PostgreSQL"], summary="Verifica conexión a PostgreSQL y la extensión pgvector")
 def pg_health():
     from src.adapters.config.settings import settings
-    
+
     engine = get_pg_engine()
     if engine is None:
         # No configurado
@@ -30,15 +30,15 @@ def pg_health():
             # Verificar extensión vector
             res = conn.execute(text("SELECT extname FROM pg_extension WHERE extname='vector'"))
             has_vector = res.fetchone() is not None
-            
+
             # Información adicional para debugging
             version_res = conn.execute(text("SELECT version()"))
             version_row = version_res.fetchone()
             pg_version = version_row[0] if version_row else "Unknown"
-            
+
         # Sanitizar URL antes de exponerla
         safe_url = sanitize_db_url(settings.database_url_pg) if settings.database_url_pg else None
-        
+
         return {
             "configured": True,
             "connected": True,
@@ -51,7 +51,7 @@ def pg_health():
     except Exception as e:
         # Sanitizar URL antes de exponerla
         safe_url = sanitize_db_url(settings.database_url_pg) if settings.database_url_pg else None
-        
+
         return {
             "configured": True,
             "connected": False,

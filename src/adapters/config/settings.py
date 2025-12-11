@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(..., description="API key para Groq.")
     gemini_api_key: str | None = Field(None, description="API key para Gemini (Google AI Studio)")
     bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
-    
+
     # --- Seguridad y Autenticación ---
     jwt_secret_key: str = Field(
         ...,
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
         60,
         description="Tiempo de expiración de tokens JWT en minutos (default: 60 = 1 hora)"
     )
-    
+
     # --- Modelo LLM ---
     groq_model_name: str = Field(
         "moonshotai/kimi-k2-instruct-0905",
@@ -70,13 +70,13 @@ class Settings(BaseSettings):
         default=None,
         description="URL de conexión a PostgreSQL (opcional) para almacenamiento de embeddings con pgvector.",
     )
-    
+
     # Backend de base de datos a usar
     db_backend: str = Field(
         "sqlite",
         description="Backend de base de datos: sqlite o postgresql"
     )
-    
+
     @property
     def effective_database_url(self) -> str:
         """Retorna la URL efectiva de base de datos según la configuración."""
@@ -108,14 +108,14 @@ class Settings(BaseSettings):
         description="Tamaño de lote para encode() del modelo de embeddings. Optimizado para bajos recursos (2-4)",
     )
 
-    # --- Chunking de texto (optimizado para Gemini API) ---
+    # --- Chunking de texto (optimizado para definiciones técnicas) ---
     embedding_chunk_size: int = Field(
-        1000,
-        description="Tamaño de chunk de texto para indexación de PDFs (caracteres) - aumentado para mejor contexto",
+        800,
+        description="Tamaño de chunk de texto para indexación de PDFs (caracteres) - reducido para mejor precisión en definiciones",
     )
     embedding_chunk_overlap: int = Field(
-        150,
-        description="Solapamiento entre chunks de texto (caracteres) - aumentado proporcionalmente",
+        200,
+        description="Solapamiento entre chunks de texto (caracteres) - aumentado para preservar contexto conceptual",
     )
 
     # --- Búsqueda Python (Brave Search API) ---
@@ -136,7 +136,7 @@ class Settings(BaseSettings):
         10,
         description="Máximo de resultados de búsqueda a incluir en el contexto (aumentado para mejor cobertura)",
     )
-    
+
     # --- Búsqueda RAG Adaptativa (aprovecha ventana de contexto de Gemini) ---
     # Optimizado para libros técnicos grandes (SQL, Python, etc.)
     rag_simple_top_k: int = Field(
@@ -163,7 +163,7 @@ class Settings(BaseSettings):
         30000,
         description="Límite de caracteres de contexto para preguntas complejas - aprovecha ventana de Gemini al máximo",
     )
-    
+
     # --- Guardian (Qwen2.5-1.5B Security) ---
     guardian_enabled: bool = Field(
         True,

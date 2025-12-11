@@ -4,11 +4,11 @@ Siguiendo principios de arquitectura hexagonal y separación de responsabilidade
 """
 
 from .chat_interface import ChatInterface
-from .session_manager import SessionManager
 from .pdf_context import PDFContextManager
+from .session_manager import SessionManager
 
 __all__ = [
     "ChatInterface",
-    "SessionManager", 
+    "SessionManager",
     "PDFContextManager"
 ]

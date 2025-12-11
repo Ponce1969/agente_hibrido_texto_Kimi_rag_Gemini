@@ -12,15 +12,12 @@ Notes:
 """
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence, Tuple
-from dataclasses import asdict
-from datetime import datetime
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import text
 
-from src.adapters.db.pg_engine import get_pg_engine
 from src.adapters.db.embeddings_models import EmbeddingChunk, SimilarChunk
-
+from src.adapters.db.pg_engine import get_pg_engine
 
 EMBEDDING_DIM = 768  # Updated for Gemini text-embedding-004 (API-based, no local resources)
 TABLE_NAME = "document_chunks"
@@ -66,7 +63,7 @@ class EmbeddingsRepository:
         with self.engine.begin() as conn:
             res = conn.execute(text(f"DELETE FROM {TABLE_NAME} WHERE file_id = :fid"), {"fid": file_id})
             return res.rowcount or 0
-    
+
     def delete_chunks_by_file(self, file_id: int) -> int:
         """Alias for delete_file_chunks for consistency."""
         return self.delete_file_chunks(file_id)
@@ -79,7 +76,7 @@ class EmbeddingsRepository:
         else:
             sql = text(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE file_id = :fid")
             params = {"fid": file_id}
-            
+
         with self.engine.begin() as conn:
             res = conn.execute(sql, params).fetchone()
             return int(res[0]) if res is not None else 0
@@ -115,12 +112,12 @@ class EmbeddingsRepository:
     def search_top_k(
         self,
         query_embedding: Sequence[float],
-        file_id: Optional[int] = None,
+        file_id: int | None = None,
         top_k: int = 10,
-    ) -> List[SimilarChunk]:
+    ) -> list[SimilarChunk]:
         """Return top-k most similar chunks using cosine distance (<->).
         If file_id is provided, the search is filtered to that file.
-        
+
         Default top_k aumentado de 5 a 10 para mejor cobertura de contexto.
         """
         # Convertir el embedding a string de array de PostgreSQL
@@ -143,7 +140,7 @@ class EmbeddingsRepository:
         )
         with self.engine.begin() as conn:
             res = conn.execute(sql, params)
-            out: List[SimilarChunk] = []
+            out: list[SimilarChunk] = []
             for row in res.mappings():  # Usar mappings() para acceder por nombre de columna
                 out.append(
                     SimilarChunk(

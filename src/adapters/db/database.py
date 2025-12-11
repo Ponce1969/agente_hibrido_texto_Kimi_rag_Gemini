@@ -1,18 +1,19 @@
-from typing import Generator
-from sqlmodel import Session, SQLModel, create_engine
-from sqlalchemy.pool import StaticPool
+import os
 import re
+from collections.abc import Generator
+
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, SQLModel, create_engine
 
 from src.adapters.config.settings import settings
-from src.adapters.db.file_models import FileUpload, FileSection  # noqa: F401
+from src.adapters.db.file_models import FileSection, FileUpload  # noqa: F401
 from src.domain.models.user import User  # noqa: F401
-import os
 
 
 def sanitize_db_url(url: str) -> str:
     """
     Oculta credenciales en URLs de base de datos para logs seguros.
-    
+
     Ejemplo:
         postgresql://user:password@host:5432/db
         -> postgresql://user:***@host:5432/db
@@ -24,14 +25,17 @@ def sanitize_db_url(url: str) -> str:
 # Importar modelos de embeddings solo si usamos PostgreSQL para RAG
 # (Los embeddings van en PostgreSQL, no en SQLite)
 try:
-    from src.adapters.db.embeddings_models import EmbeddingChunk, SimilarChunk  # noqa: F401
+    from src.adapters.db.embeddings_models import (  # noqa: F401
+        EmbeddingChunk,
+        SimilarChunk,
+    )
 except ImportError:
     # Los modelos de embeddings pueden no estar disponibles
     pass
 
 # Importar modelos de chat si existen
 try:
-    from src.adapters.db.chat_models import ChatSession, ChatMessage  # noqa: F401
+    from src.adapters.db.chat_models import ChatMessage, ChatSession  # noqa: F401
 except ImportError:
     # Si no existen modelos de chat específicos para DB, usar los de dominio
     pass
@@ -59,14 +63,14 @@ def create_db_and_tables():
     # Asegurar directorios de datos
     os.makedirs("data", exist_ok=True)
     os.makedirs("data/files", exist_ok=True)
-    
+
     # Crear todas las tablas usando SQLModel
     SQLModel.metadata.create_all(engine)
-    
+
     # Log seguro sin exponer credenciales
     safe_url = sanitize_db_url(settings.effective_database_url)
     print(f"✅ Tablas creadas/verificadas en: {safe_url}")
-    
+
     # Ajustes específicos según el backend
     if settings.db_backend == "postgresql":
         # Ajustes para PostgreSQL

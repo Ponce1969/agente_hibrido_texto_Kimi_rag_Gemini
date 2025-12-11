@@ -1,7 +1,6 @@
 """Modelos de dominio para métricas."""
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -17,12 +16,12 @@ class AgentMetricData:
     model_name: str
     has_rag_context: bool = False
     rag_chunks_used: int = 0
-    file_id: Optional[str] = None
+    file_id: str | None = None
     used_bear_search: bool = False
     bear_sources_count: int = 0
-    user_rating: Optional[int] = None
-    id: Optional[int] = None
-    created_at: Optional[datetime] = None
+    user_rating: int | None = None
+    id: int | None = None
+    created_at: datetime | None = None
 
 
 @dataclass
@@ -30,8 +29,8 @@ class ErrorLogData:
     """Datos de un log de error (modelo de dominio)."""
     error_type: str
     error_message: str
-    stack_trace: Optional[str] = None
-    session_id: Optional[str] = None
-    endpoint: Optional[str] = None
-    id: Optional[int] = None
-    created_at: Optional[datetime] = None
+    stack_trace: str | None = None
+    session_id: str | None = None
+    endpoint: str | None = None
+    id: int | None = None
+    created_at: datetime | None = None

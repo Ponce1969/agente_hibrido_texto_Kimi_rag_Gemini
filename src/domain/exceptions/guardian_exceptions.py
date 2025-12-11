@@ -10,7 +10,7 @@ class GuardianException(Exception):
 
 class MessageBlockedException(GuardianException):
     """Mensaje bloqueado por el Guardian."""
-    
+
     def __init__(self, reason: str, threat_level: str = "unknown"):
         self.reason = reason
         self.threat_level = threat_level

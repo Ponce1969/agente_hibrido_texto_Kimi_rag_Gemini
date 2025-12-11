@@ -2,23 +2,29 @@
 Servicio de aplicación para gestión de archivos y PDFs.
 Encapsula la lógica de negocio relacionada con archivos.
 """
-import streamlit as st
-from typing import List, Optional, Tuple
-import sys
 import os
+import sys
+
+import streamlit as st
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from models.file_models import (
+    FileProgress,
+    FileSection,
+    FileUploadInfo,
+    ProcessingPhase,
+)
 from services.backend_client import BackendClient
-from models.file_models import FileUploadInfo, FileProgress, FileSection, ProcessingPhase
 
 
 class FileService:
     """Servicio para gestión de archivos y PDFs."""
-    
+
     def __init__(self, backend_client: BackendClient):
         self.backend = backend_client
-    
-    def upload_pdf(self, uploaded_file, auto_index: bool = True) -> Tuple[bool, str, Optional[int]]:
+
+    def upload_pdf(self, uploaded_file, auto_index: bool = True) -> tuple[bool, str, int | None]:
         """
         Sube un archivo PDF.
         Returns: (success, message, file_id)
@@ -36,15 +42,15 @@ class FileService:
             return True, f"Subido. file_id={file_id}", file_id
         except Exception as e:
             return False, f"Error al subir PDF: {e}", None
-    
-    def get_file_progress(self, file_id: int) -> Optional[FileProgress]:
+
+    def get_file_progress(self, file_id: int) -> FileProgress | None:
         """Obtiene el progreso de un archivo."""
         try:
             return self.backend.get_file_progress(file_id)
         except Exception:
             return None
-    
-    def is_file_ready_for_context(self, file_id: int) -> Tuple[bool, str]:
+
+    def is_file_ready_for_context(self, file_id: int) -> tuple[bool, str]:
         """
         Verifica si un archivo está listo para usar como contexto.
         Returns: (is_ready, status_message)
@@ -53,11 +59,11 @@ class FileService:
             progress = self.get_file_progress(file_id)
             if not progress:
                 return False, "No se pudo verificar el estado del archivo"
-            
+
             chunks = 0
             if progress.detail:
                 chunks = int(progress.detail.get("chunks_indexed", 0))
-            
+
             if progress.phase == ProcessingPhase.READY and chunks > 0:
                 return True, f"Listo ({chunks} chunks indexados)"
             elif progress.phase == ProcessingPhase.PROCESSING_SECTIONS:
@@ -70,8 +76,8 @@ class FileService:
                 return False, f"Estado: {progress.phase.value}"
         except Exception as e:
             return False, f"Error verificando estado: {e}"
-    
-    def trigger_indexing(self, file_id: int) -> Tuple[bool, str]:
+
+    def trigger_indexing(self, file_id: int) -> tuple[bool, str]:
         """
         Dispara la indexación de un archivo.
         Returns: (success, message)
@@ -81,19 +87,19 @@ class FileService:
             return True, "Indexación iniciada en segundo plano"
         except Exception as e:
             return False, f"Error iniciando indexación: {e}"
-    
-    def get_file_list(self, limit: int = 30) -> List[FileUploadInfo]:
+
+    def get_file_list(self, limit: int = 30) -> list[FileUploadInfo]:
         """Obtiene la lista de archivos."""
         return self.backend.list_files(limit=limit)
-    
-    def get_file_sections(self, file_id: int) -> List[FileSection]:
+
+    def get_file_sections(self, file_id: int) -> list[FileSection]:
         """Obtiene las secciones de un archivo."""
         try:
             return self.backend.get_file_sections(file_id)
         except Exception:
             return []
-    
-    def setup_pdf_context(self, file_id: int) -> Tuple[bool, str]:
+
+    def setup_pdf_context(self, file_id: int) -> tuple[bool, str]:
         """
         Configura un PDF para usar como contexto.
         Returns: (success, message)
@@ -101,7 +107,7 @@ class FileService:
         try:
             # Verificar estado actual
             is_ready, status_msg = self.is_file_ready_for_context(file_id)
-            
+
             if is_ready:
                 st.session_state.pdf_file_id = file_id
                 st.session_state._use_pdf_context = True
@@ -117,14 +123,14 @@ class FileService:
                     return False, f"No se pudo configurar el PDF: {index_msg}"
         except Exception as e:
             return False, f"Error configurando PDF: {e}"
-    
-    def delete_file(self, file_id: int) -> Tuple[bool, str]:
+
+    def delete_file(self, file_id: int) -> tuple[bool, str]:
         """
         Elimina un archivo y todos sus datos asociados.
-        
+
         Args:
             file_id: ID del archivo a eliminar
-            
+
         Returns:
             (success, message)
         """

@@ -31,26 +31,25 @@ async def chat_with_bear_search(
 ) -> BearChatResponse:
     """
     Endpoint dedicado para Kimi-k2 con búsqueda en Bear API.
-    
+
     Este endpoint fuerza el uso de búsqueda en Internet para Kimi-k2,
     ignorando completamente el sistema RAG de Gemini.
     """
     try:
         print(f"🔍 Bear API Endpoint: Recibiendo petición: {request.message}")
-        
+
         # Forzar búsqueda Bear API directamente
         sources = await service.python_search.search_python_best_practice(request.message)
         print(f"🔍 Bear API: {len(sources)} fuentes encontradas")
-        
+
         if sources:
             service.last_search_sources = sources
             internet_context = service._build_internet_context(sources)
             print(f"🔍 Bear API: Contexto construido: {len(internet_context)} chars")
-            
+
             # Construir prompt con contexto
-            system_prompt = service._get_system_prompt(request.agent_mode)
-            full_prompt = f"{system_prompt}\n\nContexto de búsqueda:\n{internet_context}\n\nResponde la pregunta del usuario basándote en la información encontrada."
-            
+            service._get_system_prompt(request.agent_mode)
+
             # Usar el servicio directamente sin formato complejo
             response = await service.handle_message(
                 session_id=request.session_id,
@@ -68,7 +67,7 @@ async def chat_with_bear_search(
                 use_internet=True,
                 file_id=None
             )
-        
+
         # Obtener fuentes usadas
         sources_list = [
             {
@@ -79,12 +78,12 @@ async def chat_with_bear_search(
             }
             for source in sources
         ]
-        
+
         return BearChatResponse(
             response=response,
             sources_used=sources_list,
             search_performed=len(sources) > 0
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

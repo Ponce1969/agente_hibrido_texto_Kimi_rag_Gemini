@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 from .chat_models import (
-    ChatMessage, ChatSession, MessageRole,
-    ChatMessageCreate, ChatSessionCreate,
+    ChatMessage,
+    ChatMessageCreate,
+    ChatSession,
+    ChatSessionCreate,
+    MessageRole,
 )
 from .file_models import FileDocument, FileSection, FileStatus
 

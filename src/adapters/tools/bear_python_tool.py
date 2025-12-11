@@ -1,13 +1,12 @@
 """Implementación de búsqueda Python con Bear API y filtros estrictos."""
+import hashlib
 import re
 import time
-import hashlib
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 import httpx
-from functools import lru_cache
 
 from src.domain.ports.python_search_port import PythonSearchPort, PythonSource
-
 
 PYTHON_DOMAINS = {
     "github.com",
@@ -45,38 +44,38 @@ class BearPythonTool(PythonSearchPort):
                 "X-Subscription-Token": api_key
             }
         )
-        
+
         # Configuración de caché
         from src.adapters.config.settings import settings
         self.cache_ttl = settings.bear_cache_ttl or 3600  # 1 hora por defecto
         self.cache_enabled = settings.bear_search_enabled or True
-        self._cache: Dict[str, Dict[str, Any]] = {}
-    
+        self._cache: dict[str, dict[str, Any]] = {}
+
     def _get_cache_key(self, query: str, search_type: str) -> str:
         """Genera una clave única para el caché."""
         content = f"{search_type}:{query}"
         return hashlib.md5(content.encode()).hexdigest()
-    
+
     def _is_cache_valid(self, timestamp: float) -> bool:
         """Verifica si el caché sigue válido."""
         return time.time() - timestamp < self.cache_ttl
-    
-    def _get_from_cache(self, key: str) -> Optional[List[PythonSource]]:
+
+    def _get_from_cache(self, key: str) -> list[PythonSource] | None:
         """Obtiene resultados del caché si están disponibles y válidos."""
         if not self.cache_enabled:
             return None
-            
+
         cached = self._cache.get(key)
         if cached and self._is_cache_valid(cached['timestamp']):
             print(f"🎯 Bear API: Caché hit para {key}")
             return cached['data']
         return None
-    
-    def _set_cache(self, key: str, data: List[PythonSource]) -> None:
+
+    def _set_cache(self, key: str, data: list[PythonSource]) -> None:
         """Almacena resultados en caché."""
         if not self.cache_enabled:
             return
-            
+
         self._cache[key] = {
             'data': data,
             'timestamp': time.time()
@@ -87,7 +86,7 @@ class BearPythonTool(PythonSearchPort):
     def _clean_query(self, raw_query: str) -> str:
         """
         Limpia la query antes de enviarla a Brave Search.
-        
+
         Elimina:
         - Prefijos del modelo (kimi-k2:, kimi:)
         - Frases meta ("puedes buscar", "busca información sobre")
@@ -96,10 +95,10 @@ class BearPythonTool(PythonSearchPort):
         - Espacios extras
         """
         cleaned = raw_query
-        
+
         # 1. Eliminar prefijos del modelo
         cleaned = re.sub(r"^(kimi-k2[:\?]\s*|kimi[:\?]\s*)", "", cleaned, flags=re.IGNORECASE)
-        
+
         # 2. Eliminar frases meta que no aportan a la búsqueda
         cleaned = re.sub(
             r"\b(puedes buscar|busca información sobre|busca sobre|buscar información|buscar sobre|información sobre)\b\s*",
@@ -107,7 +106,7 @@ class BearPythonTool(PythonSearchPort):
             cleaned,
             flags=re.IGNORECASE
         )
-        
+
         # 3. Eliminar keywords agregadas automáticamente
         cleaned = re.sub(
             r"\b(best practices pep-8 guide|pep-8 guide|best practices guide)\b",
@@ -115,18 +114,18 @@ class BearPythonTool(PythonSearchPort):
             cleaned,
             flags=re.IGNORECASE
         )
-        
+
         # 4. Eliminar "esto" o "eso" al inicio (quedan después de limpiar frases meta)
         cleaned = re.sub(r"^(esto|eso)\s+", "", cleaned, flags=re.IGNORECASE)
-        
+
         # 5. Eliminar signos de interrogación iniciales/finales redundantes
         cleaned = re.sub(r"^[¿?]+|[¿?]+$", "", cleaned)
-        
+
         # 6. Limpiar espacios múltiples
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        
+
         return cleaned if cleaned else raw_query  # Fallback si queda vacío
-    
+
     def _is_python_related(self, text: str) -> bool:
         """Detecta si el contenido es sobre Python."""
         python_kw = {
@@ -206,7 +205,7 @@ class BearPythonTool(PythonSearchPort):
         }
         return any(kw in query.lower() for kw in general_kw)
 
-    def _filter_sources(self, raw_results: List[dict]) -> List[PythonSource]:
+    def _filter_sources(self, raw_results: list[dict]) -> list[PythonSource]:
         """Aplica whitelist y score de confiabilidad (modo relajado)."""
         filtered = []
         for result in raw_results:
@@ -216,7 +215,7 @@ class BearPythonTool(PythonSearchPort):
 
             # Filtrar por dominio (si está en whitelist, priorizar)
             in_whitelist = domain in PYTHON_DOMAINS
-            
+
             # Si NO está en whitelist, verificar si es Python-related
             if not in_whitelist:
                 # Permitir si el snippet menciona Python claramente
@@ -225,7 +224,7 @@ class BearPythonTool(PythonSearchPort):
 
             # Calcular confiabilidad
             reliability = self._calculate_reliability(domain, url)
-            
+
             # Si está en whitelist, aumentar confiabilidad
             if in_whitelist:
                 reliability = min(10, reliability + 2)
@@ -239,7 +238,7 @@ class BearPythonTool(PythonSearchPort):
                     reliability=reliability,
                 )
             )
-        
+
         # Ordenar por confiabilidad y retornar top 5
         filtered.sort(key=lambda x: x.reliability, reverse=True)
         return filtered[:5]
@@ -270,7 +269,7 @@ class BearPythonTool(PythonSearchPort):
         return "blog"
 
     # ---------- port implementation ----------
-    async def search_python_bug(self, error_message: str) -> List[PythonSource]:
+    async def search_python_bug(self, error_message: str) -> list[PythonSource]:
         """Busca soluciones a errores específicos con caché."""
         if self._is_general_query(error_message):
             return []  # rechazo rápido
@@ -278,30 +277,30 @@ class BearPythonTool(PythonSearchPort):
         query = f'{error_message} python traceback solution fix'
         return await self._execute_search(query, 10, "bug")
 
-    async def search_python_api(self, module: str, attribute: str) -> List[PythonSource]:
+    async def search_python_api(self, module: str, attribute: str) -> list[PythonSource]:
         """Busca ejemplos de uso de APIs específicas con caché."""
         query = f"python {module}.{attribute} example usage tutorial"
         return await self._execute_search(query, 8, "api")
 
-    async def search_python_best_practice(self, topic: str) -> List[PythonSource]:
+    async def search_python_best_practice(self, topic: str) -> list[PythonSource]:
         """Busca best practices y guías oficiales con caché."""
         # Limpiar la query antes de agregar keywords
         clean_topic = self._clean_query(topic)
-        
+
         # Log para debugging
         if clean_topic != topic:
             print(f"🧹 Query limpiada: '{topic}' → '{clean_topic}'")
-        
+
         # Solo agregar keywords si la query es corta (< 50 chars)
         if len(clean_topic) < 50:
             query = f"python {clean_topic} best practices"
         else:
             # Query larga: ya es específica, no agregar ruido
             query = f"python {clean_topic}"
-        
+
         return await self._execute_search(query, 8, "best_practice")
 
-    async def _execute_search(self, query: str, num_results: int, search_type: str) -> List[PythonSource]:
+    async def _execute_search(self, query: str, num_results: int, search_type: str) -> list[PythonSource]:
         """Ejecuta la búsqueda con Brave API y la filtra."""
         cache_key = self._get_cache_key(query, search_type)
         cached = self._get_from_cache(cache_key)
@@ -318,10 +317,10 @@ class BearPythonTool(PythonSearchPort):
             response = await self.client.get(self.base_url, params=params)
             response.raise_for_status()
             data = response.json()
-            
+
             # Brave devuelve resultados en data['web']['results']
             raw_results = data.get("web", {}).get("results", [])
-            
+
             # Adaptar formato de Brave a nuestro formato
             adapted_results = []
             for result in raw_results:
@@ -330,9 +329,9 @@ class BearPythonTool(PythonSearchPort):
                     "title": result.get("title", ""),
                     "snippet": result.get("description", ""),
                 })
-            
+
             filtered_results = self._filter_sources(adapted_results)
-            
+
             self._set_cache(cache_key, filtered_results)
             print(f"✅ Brave Search: {len(filtered_results)} resultados filtrados")
             return filtered_results
@@ -345,11 +344,11 @@ class BearPythonTool(PythonSearchPort):
         """Limpia el caché manualmente."""
         self._cache.clear()
         print("🎯 Bear API: Caché limpiado")
-    
-    async def _fallback_search(self, query: str, num_results: int) -> List[PythonSource]:
+
+    async def _fallback_search(self, query: str, num_results: int) -> list[PythonSource]:
         """Búsqueda de fechas y versiones actuales usando web scraping."""
         print(f"🔍 Web Scraping: Búsqueda actual para '{query}'")
-        
+
         # Búsqueda específica de fechas actuales
         if "última versión" in query.lower() or "fecha actual" in query.lower():
             # Resultados actualizados manualmente
@@ -365,7 +364,7 @@ class BearPythonTool(PythonSearchPort):
                     title="Python 3.14 Documentation (ES)",
                     url="https://docs.python.org/es/3.14/",
                     snippet="Python 3.14 - Development version (October 2025)",
-                    source_type="official_docs", 
+                    source_type="official_docs",
                     reliability=10
                 ),
                 PythonSource(
@@ -377,7 +376,7 @@ class BearPythonTool(PythonSearchPort):
                 )
             ]
             return current_results[:num_results]
-        
+
         # Búsqueda general para otros temas
         return [
             PythonSource(
@@ -388,17 +387,17 @@ class BearPythonTool(PythonSearchPort):
                 reliability=10
             )
         ]
-    
-    def get_cache_stats(self) -> Dict[str, int]:
+
+    def get_cache_stats(self) -> dict[str, int]:
         """Obtiene estadísticas del caché."""
-        valid_entries = sum(1 for v in self._cache.values() 
+        valid_entries = sum(1 for v in self._cache.values()
                           if self._is_cache_valid(v['timestamp']))
         return {
             'total_entries': len(self._cache),
             'valid_entries': valid_entries,
             'expired_entries': len(self._cache) - valid_entries
         }
-    
+
     async def __aenter__(self):
         """Context manager para cleanup."""
         return self

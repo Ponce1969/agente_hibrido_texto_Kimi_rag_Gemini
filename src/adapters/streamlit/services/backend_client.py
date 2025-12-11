@@ -2,20 +2,27 @@
 Cliente HTTP para comunicación con el backend.
 Adaptador que encapsula todas las llamadas HTTP.
 """
+import os
+import sys
+from typing import Any
+
 import httpx
 import streamlit as st
-from typing import List, Optional, Dict, Any
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.chat_models import ChatMessage, ChatSession, ChatRequest, ChatResponse, AgentMode
-from models.file_models import FileUploadInfo, FileProgress, FileSection, EmbeddingSearchResult
+from models.chat_models import ChatMessage, ChatRequest, ChatResponse, ChatSession
+from models.file_models import (
+    EmbeddingSearchResult,
+    FileProgress,
+    FileSection,
+    FileUploadInfo,
+)
 
 
 class BackendClient:
     """Cliente para comunicación con el backend API."""
-    
+
     def __init__(self, base_url: str = None):
         # Detectar si estamos en Docker o desarrollo local
         import os
@@ -25,10 +32,10 @@ class BackendClient:
                 base_url = "http://backend:8000/api/v1"
             else:
                 base_url = "http://localhost:8000/api/v1"
-        
+
         self.base_url = base_url
         self.user_id = "streamlit_user"
-    
+
     def test_connection(self) -> tuple[bool, str]:
         """Prueba la conexión con el backend."""
         try:
@@ -39,14 +46,14 @@ class BackendClient:
                 return False, f"❌ Error {response.status_code}: {response.text}"
         except Exception as e:
             return False, f"❌ Error de conexión: {e}"
-    
+
     # === Sesiones de Chat ===
-    
+
     def create_session(self) -> int:
         """Crea una nueva sesión de chat."""
         try:
             response = httpx.post(
-                f"{self.base_url}/sessions", 
+                f"{self.base_url}/sessions",
                 json={"user_id": self.user_id},
                 timeout=10
             )
@@ -58,12 +65,12 @@ class BackendClient:
         except Exception as e:
             print(f"Error creando sesión: {e}")
             return 0
-    
-    def get_session_messages(self, session_id: int) -> List[ChatMessage]:
+
+    def get_session_messages(self, session_id: int) -> list[ChatMessage]:
         """Obtiene los mensajes de una sesión."""
         try:
             response = httpx.get(
-                f"{self.base_url}/sessions/{session_id}/messages", 
+                f"{self.base_url}/sessions/{session_id}/messages",
                 timeout=10
             )
             response.raise_for_status()
@@ -81,14 +88,14 @@ class BackendClient:
         except Exception as e:
             st.error(f"Error cargando mensajes de sesión {session_id}: {e}")
             return []
-    
+
     @st.cache_data(show_spinner=False, ttl=10)
-    def list_sessions(_self, limit: int = 30) -> List[ChatSession]:
+    def list_sessions(_self, limit: int = 30) -> list[ChatSession]:
         """Lista las sesiones del usuario."""
         try:
             response = httpx.get(
-                f"{_self.base_url}/sessions", 
-                params={"user_id": _self.user_id, "limit": limit}, 
+                f"{_self.base_url}/sessions",
+                params={"user_id": _self.user_id, "limit": limit},
                 timeout=10
             )
             response.raise_for_status()
@@ -105,7 +112,7 @@ class BackendClient:
             ]
         except Exception:
             return []
-    
+
     def delete_session(self, session_id: int) -> bool:
         """Elimina una sesión."""
         try:
@@ -115,7 +122,7 @@ class BackendClient:
         except Exception as e:
             st.error(f"Error eliminando sesión {session_id}: {e}")
             return False
-    
+
     def send_chat_message(self, request: ChatRequest) -> ChatResponse:
         """Envía un mensaje de chat al backend."""
         try:
@@ -128,7 +135,7 @@ class BackendClient:
                 payload["file_id"] = request.file_id
             if request.selected_section_ids:
                 payload["selected_section_ids"] = request.selected_section_ids
-            
+
             response = httpx.post(
                 f"{self.base_url}/chat",
                 json=payload,
@@ -136,7 +143,7 @@ class BackendClient:
             )
             response.raise_for_status()
             data = response.json()
-            
+
             return ChatResponse(
                 content=data.get("reply", ""),  # El backend devuelve "reply", no "response"
                 success=True
@@ -160,24 +167,24 @@ class BackendClient:
                 else:
                     # Otros errores del servidor
                     error_msg = error_data.get("detail", error_msg)
-            except:
+            except Exception:
                 # Si no se puede parsear el JSON, usar mensaje genérico
                 pass
-            
+
             return ChatResponse(
                 content="",
                 success=False,
                 error=error_msg
             )
-        except Exception as e:
+        except Exception:
             return ChatResponse(
                 content="",
                 success=False,
             )
-    
+
     # === Gestión de Archivos ===
-    
-    def list_files(self, limit: int = 30) -> List[FileUploadInfo]:
+
+    def list_files(self, limit: int = 30) -> list[FileUploadInfo]:
         """Lista los archivos subidos."""
         try:
             response = httpx.get(f"{self.base_url}/files", params={"limit": limit}, timeout=10)
@@ -192,8 +199,8 @@ class BackendClient:
             import streamlit as st
             st.error(f"❌ Error obteniendo archivos: {e}")
             return []
-    
-    def upload_pdf(self, file_name: str, file_bytes: bytes, mime: str, auto_index: bool = False) -> Dict[str, Any]:
+
+    def upload_pdf(self, file_name: str, file_bytes: bytes, mime: str, auto_index: bool = False) -> dict[str, Any]:
         """Sube un archivo PDF."""
         files = {
             "file": (file_name, file_bytes, mime or "application/pdf"),
@@ -202,13 +209,13 @@ class BackendClient:
         response = httpx.post(f"{self.base_url}/files/upload", files=files, params=params, timeout=60)
         response.raise_for_status()
         return response.json()
-    
+
     def get_file_progress(self, file_id: int) -> FileProgress:
         """Obtiene el progreso de procesamiento de un archivo."""
         response = httpx.get(f"{self.base_url}/files/progress/{file_id}", timeout=10)
         response.raise_for_status()
         data = response.json()
-        
+
         return FileProgress(
             phase=data["phase"],
             status=data["status"],
@@ -216,20 +223,20 @@ class BackendClient:
             total_pages=data["total_pages"],
             detail=data.get("detail")
         )
-    
-    def start_file_processing(self, file_id: int) -> Dict[str, Any]:
+
+    def start_file_processing(self, file_id: int) -> dict[str, Any]:
         """Inicia el procesamiento de un archivo."""
         response = httpx.post(f"{self.base_url}/files/process/{file_id}", timeout=10)
         response.raise_for_status()
         return response.json()
-    
+
     def delete_file(self, file_id: int) -> bool:
         """
         Elimina un archivo y todos sus datos asociados.
-        
+
         Args:
             file_id: ID del archivo a eliminar
-            
+
         Returns:
             True si se eliminó correctamente, False en caso contrario
         """
@@ -247,13 +254,13 @@ class BackendClient:
             import streamlit as st
             st.error(f"❌ Error eliminando archivo: {e}")
             return False
-    
-    def get_file_sections(self, file_id: int) -> List[FileSection]:
+
+    def get_file_sections(self, file_id: int) -> list[FileSection]:
         """Obtiene las secciones de un archivo."""
         response = httpx.get(f"{self.base_url}/files/{file_id}/sections", timeout=30)
         response.raise_for_status()
         data = response.json()
-        
+
         return [
             FileSection(
                 id=section["id"],
@@ -265,25 +272,25 @@ class BackendClient:
             )
             for section in data
         ]
-    
+
     # === Embeddings ===
-    
-    def trigger_indexing(self, file_id: int) -> Dict[str, Any]:
+
+    def trigger_indexing(self, file_id: int) -> dict[str, Any]:
         """Dispara la indexación de embeddings."""
         response = httpx.post(f"{self.base_url}/embeddings/index/{file_id}", timeout=10)
         response.raise_for_status()
         return response.json()
-    
-    def search_embeddings(self, query: str, file_id: Optional[int], top_k: int = 5) -> List[EmbeddingSearchResult]:
+
+    def search_embeddings(self, query: str, file_id: int | None, top_k: int = 5) -> list[EmbeddingSearchResult]:
         """Busca en los embeddings."""
         params = {"q": query, "top_k": top_k}
         if file_id is not None:
             params["file_id"] = file_id
-        
+
         response = httpx.get(f"{self.base_url}/embeddings/search", params=params, timeout=60)
         response.raise_for_status()
         data = response.json()
-        
+
         return [
             EmbeddingSearchResult(
                 id=result["id"],

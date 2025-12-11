@@ -6,18 +6,15 @@ It does not affect the current SQLite-backed chat history.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from src.adapters.config.settings import settings
 
+_pg_engine: Engine | None = None
 
-_pg_engine: Optional[Engine] = None
 
-
-def get_pg_engine() -> Optional[Engine]:
+def get_pg_engine() -> Engine | None:
     """
     Return a singleton SQLAlchemy Engine for PostgreSQL when configured.
     If `settings.database_url_pg` is not set, returns None.

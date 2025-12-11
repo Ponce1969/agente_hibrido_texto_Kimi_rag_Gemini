@@ -10,7 +10,12 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..models.chat_models import ChatSession, ChatMessage, ChatMessageCreate, ChatSessionCreate
+    from ..models.chat_models import (
+        ChatMessage,
+        ChatMessageCreate,
+        ChatSession,
+        ChatSessionCreate,
+    )
 
 
 class ChatRepositoryPort(ABC):

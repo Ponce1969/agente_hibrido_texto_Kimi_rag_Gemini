@@ -8,16 +8,17 @@ import logging
 import os
 from typing import TYPE_CHECKING
 from uuid import uuid4
-from pathvalidate import sanitize_filename
 
+from fastapi import UploadFile
+from pathvalidate import sanitize_filename
 from pypdf import PdfReader
 
-from src.domain.models.file_models import FileStatus, FileDocument
 from src.adapters.config.settings import settings
+from src.domain.models.file_models import FileDocument, FileStatus
 
 if TYPE_CHECKING:
-    from src.domain.ports.file_repository_port import FileRepositoryPort
     from src.application.services.embeddings_service import EmbeddingsServiceV2
+    from src.domain.ports.file_repository_port import FileRepositoryPort
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,8 @@ class FileProcessingService:
     """Orquesta el procesamiento, extracción de texto e indexación de archivos."""
 
     def __init__(
-        self, 
-        file_repo: FileRepositoryPort, 
+        self,
+        file_repo: FileRepositoryPort,
         embeddings_service: EmbeddingsServiceV2,
         max_pdf_size_mb: int = 50
     ):
@@ -34,7 +35,7 @@ class FileProcessingService:
         self.embeddings_service = embeddings_service
         self.max_pdf_size_mb = max_pdf_size_mb
 
-    async def upload_and_save_file(self, file: 'UploadFile') -> FileDocument:
+    async def upload_and_save_file(self, file: UploadFile) -> FileDocument:
         filename_original = sanitize_filename(file.filename or "uploaded.pdf")
         content = await file.read()
         size_bytes = len(content)
@@ -95,7 +96,7 @@ class FileProcessingService:
             with open(file_doc.file_path, "rb") as f:
                 reader = PdfReader(io.BytesIO(f.read()))
         except Exception as e:
-            raise IOError(f"No se pudo leer el archivo físico {file_doc.file_path}: {e}")
+            raise OSError(f"No se pudo leer el archivo físico {file_doc.file_path}: {e}") from e
 
         sections = self.file_repo.get_file_sections(file_id)
         if not sections:
@@ -104,7 +105,7 @@ class FileProcessingService:
         for section in sections:
             text_parts = [reader.pages[i].extract_text() or "" for i in range(section.page_number, section.page_number + 1)]
             section.text = "\n".join(text_parts).strip()
-        
+
         valid_sections = [sec for sec in sections if sec.text]
         if not valid_sections:
             raise ValueError(f"No se pudo extraer texto de ninguna sección del archivo {file_id}")
@@ -120,24 +121,24 @@ class FileProcessingService:
             logger.error(f"Error al indexar el archivo {file_id}: {e}", exc_info=True)
             raise
 
-    def get_file_status(self, file_id: int) -> Optional[FileDocument]:
+    def get_file_status(self, file_id: int) -> FileDocument | None:
         return self.file_repo.get_file(file_id)
 
     def list_files(self, limit: int) -> list[FileDocument]:
         return self.file_repo.list_files(limit)
-    
+
     def delete_file(self, file_id: int) -> bool:
         """
         Elimina un archivo y sus datos asociados (secciones y embeddings).
-        
+
         Args:
             file_id: ID del archivo a eliminar
-            
+
         Returns:
             True si se eliminó correctamente, False si no existía
         """
         logger.info(f"Eliminando archivo file_id={file_id}")
-        
+
         # Eliminar embeddings primero
         try:
             from src.adapters.db.embeddings_repository import EmbeddingsRepository
@@ -146,7 +147,7 @@ class FileProcessingService:
             logger.info(f"Embeddings eliminados para file_id={file_id}")
         except Exception as e:
             logger.warning(f"Error al eliminar embeddings de file_id={file_id}: {e}")
-        
+
         # Eliminar archivo físico si existe
         file_doc = self.file_repo.get_file(file_id)
         if file_doc and os.path.exists(file_doc.file_path):
@@ -155,12 +156,12 @@ class FileProcessingService:
                 logger.info(f"Archivo físico eliminado: {file_doc.file_path}")
             except Exception as e:
                 logger.warning(f"Error al eliminar archivo físico {file_doc.file_path}: {e}")
-        
+
         # Eliminar registro de BD
         success = self.file_repo.delete_file(file_id)
         if success:
             logger.info(f"Archivo {file_id} eliminado correctamente")
         else:
             logger.warning(f"Archivo {file_id} no encontrado en BD")
-        
+
         return success
