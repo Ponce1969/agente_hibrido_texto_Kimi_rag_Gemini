@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -20,11 +21,18 @@ services:
       - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
       - INTRA_OP_PARALLELISM_THREADS=${INTRA_OP_PARALLELISM_THREADS:-1}
       - INTER_OP_PARALLELISM_THREADS=${INTER_OP_PARALLELISM_THREADS:-1}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-8501}:8501"
     environment:
@@ -38,6 +46,12 @@ services:
       - backend
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   postgres:
     image: pgvector/pgvector:pg16
