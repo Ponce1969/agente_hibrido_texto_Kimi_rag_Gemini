@@ -79,7 +79,7 @@ async def handle_chat(
         return ChatResponse(reply=reply)
     except Exception as e:
         logger.error(f"Error en handle_chat: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error interno al procesar el mensaje")
+        raise HTTPException(status_code=500, detail="Error interno al procesar el mensaje")  # noqa: B904
 
 
 class ChatMessageDTO(BaseModel):
@@ -110,7 +110,7 @@ def get_session_messages_api(
         raise
     except Exception as e:
         logger.error(f"Error al obtener mensajes de sesión {session_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error al obtener mensajes")
+        raise HTTPException(status_code=500, detail="Error al obtener mensajes")  # noqa: B904
 
 
 class SessionSummaryDTO(BaseModel):
@@ -134,7 +134,7 @@ def list_sessions(
         return [SessionSummaryDTO(**details) for details in sessions_details]
     except Exception as e:
         logger.error(f"Error al listar sesiones para el usuario {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error al listar sesiones")
+        raise HTTPException(status_code=500, detail="Error al listar sesiones")  # noqa: B904
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
@@ -152,4 +152,4 @@ def delete_session(
         raise
     except Exception as e:
         logger.error(f"Error al eliminar sesión {session_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error al eliminar la sesión")
+        raise HTTPException(status_code=500, detail="Error al eliminar la sesión")  # noqa: B904

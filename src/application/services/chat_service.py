@@ -142,7 +142,7 @@ class ChatServiceV2:
 
         detailed_sessions = []
         for s in user_sessions[:limit]:
-            message_count = self.repo.count_session_messages(s.id)
+            message_count = self.repo.count_session_messages(str(s.id))
             detailed_sessions.append(
                 {
                     "id": int(s.id),
@@ -353,6 +353,8 @@ class ChatServiceV2:
         )
 
         # 7. Verificar si necesita búsqueda en Internet
+        used_bear = False  # Inicializar variables antes del bloque condicional
+        bear_sources_count = 0
         if use_internet and self.python_search and not rag_context:
             logger.info("🔍 Verificando si necesita búsqueda web...")
             if self._should_search_internet(user_message, initial_response):
@@ -429,6 +431,11 @@ class ChatServiceV2:
                 prompt_tokens = len(user_message) // 4  # ~4 chars por token
                 completion_tokens = len(response) // 4
                 logger.debug(f"⚠️ Tokens estimados (LLM no los proporciona): {prompt_tokens + completion_tokens}")
+            else:
+                # Caso inesperado, estimar
+                prompt_tokens = len(user_message) // 4
+                completion_tokens = len(response) // 4
+                logger.warning(f"⚠️ Tipo de tokens inesperado: {type(tokens)}")
 
             self.metrics.record_agent_usage(
                 session_id=session_id,
@@ -465,17 +472,21 @@ class ChatServiceV2:
 
         # Instrucción común sobre limitaciones de conocimiento (específica para Kimi-K2)
         knowledge_cutoff = (
-            "\n\n**REGLAS DE CONOCIMIENTO (Kimi-K2):**\n"
+            "\n\n**REGLAS DE CONOCIMIENTO Y BÚSQUEDA WEB (Kimi-K2):**\n"
             "Tu conocimiento base cubre hasta Python 3.13 (inclusive) y enero 2025.\n\n"
-            "Si la pregunta menciona explícitamente:\n"
+            "**PARA PREGUNTAS TÉCNICAS DE PYTHON:**\n"
+            "- Responde normalmente con tu conocimiento experto de Python\n"
+            "- Mantén la calidad técnica y precisión en arquitectura, código y mejores prácticas\n"
+            "- Usa tu experiencia como arquitecto/software engineer senior\n\n"
+            "**CUANDO NECESITES BÚSQUEDA WEB:**\n"
+            "Si la pregunta requiere información más actual o menciona explícitamente:\n"
             "- Python 3.14, 3.15, 'dev', 'main branch', 'nightly'\n"
-            "- PEP draft (no aprobados)\n"
-            "- Librerías sin soporte estable\n"
-            "- Eventos/releases posteriores a enero 2025\n\n"
-            "DEBES responder LITERALMENTE:\n"
-            "\"No tengo información suficiente sobre eso en mi conocimiento base. "
-            "Voy a buscarlo en internet.\"\n\n"
-            "En cualquier otro caso, responde normalmente con tu conocimiento de Python."
+            "- Librerías sin soporte estable o releases muy recientes\n"
+            "- Eventos/noticias/releases posteriores a enero 2025\n"
+            "- Preguntas sobre clima, noticias, información en tiempo real\n\n"
+            "ENTONCES responde: \"Voy a buscar información actualizada sobre esto.\"\n\n"
+            "**IMPORTANTE:** Prioriza siempre respuestas técnicas de alta calidad. "
+            "Usa búsqueda web solo cuando sea estrictamente necesario para información actualizada."
         )
 
         try:
@@ -492,7 +503,11 @@ class ChatServiceV2:
 
     def _should_search_internet(self, user_message: str, kimi_response: str) -> bool:
         """Detecta si Kimi no pudo resolver el problema y necesita búsqueda."""
-        # Señal PRINCIPAL: La frase literal que Kimi debe decir según el prompt
+        # Señal PRINCIPAL: La frase literal que Kimi debe decir según el prompt actualizado
+        if "voy a buscar información actualizada sobre esto" in kimi_response.lower():
+            return True
+
+        # Señal ANTERIOR (mantener compatibilidad)
         if "voy a buscarlo en internet" in kimi_response.lower():
             return True
 
@@ -593,14 +608,14 @@ class ChatServiceV2:
     async def _get_llm_response(
         self,
         system_prompt: str,
-        history: list[dict],
+        history: list,  # list[ChatMessage] pero evitamos import circular
         max_tokens: int | None,
         temperature: float | None,
         session_id: str,
         agent_mode: str,
         use_fallback_on_error: bool,
         has_rag: bool,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int | None]:
         """Helper para obtener respuesta del LLM con lógica de fallback."""
         # IMPORTANTE: Sistema híbrido
         # - RAG (con file_id) → Gemini 2.5 (fallback_llm)
