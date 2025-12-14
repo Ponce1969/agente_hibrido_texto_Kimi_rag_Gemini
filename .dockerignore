@@ -1,0 +1,71 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+.mypy_cache
+.ruff_cache
+.pytest_cache
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Archivos de desarrollo
+tests/
+test_*.py
+pytest.ini
+.coverage
+htmlcov/
+
+# Documentación
+docs/
+*.md
+!README.md
+
+# Docker
+Dockerfile.prod
+docker-compose*.yml
+.dockerignore
+
+# Archivos temporales
+*.log
+*.tmp
+tmp/
+temp/
+
+# Uploads y datos locales (se usan volúmenes)
+uploads/
+data/
+*.db
+*.sqlite
+
+# Archivos de configuración local
+.env.local
+.env.*.local
+
+# Node modules (si hubiera)
+node_modules/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos grandes innecesarios
+*.pdf
+*.zip
+*.tar.gz
+*.rar

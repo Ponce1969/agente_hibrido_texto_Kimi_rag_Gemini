@@ -43,14 +43,21 @@ docker compose up -d --build
 
 ## 📚 **Documentación**
 
-### **📖 Documentación Principal**
-- **[doc/README.md](./doc/README.md)** - Documentación completa del proyecto
-- **[doc/APRENDIZAJE_GIT_DOCKER.md](./doc/APRENDIZAJE_GIT_DOCKER.md)** - Tutorial de Git y Docker
+### **🚀 Deployment y Producción**
+- **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - 🔥 Guía completa de deployment
+- **[docs/ARCHIVOS_PARA_GITHUB.md](./docs/ARCHIVOS_PARA_GITHUB.md)** - Checklist de archivos
+- **[docs/RESUMEN_LIMPIEZA.md](./docs/RESUMEN_LIMPIEZA.md)** - Optimizaciones realizadas
+- **[docs/OPTIMIZACION_DOCKER_PRODUCCION.md](./docs/OPTIMIZACION_DOCKER_PRODUCCION.md)** - Plan de optimización
 
-### **🚀 Guías de Deployment**
-- **[doc/GUIA_RAPIDA.md](./doc/GUIA_RAPIDA.md)** - Inicio rápido
-- **[doc/DEPLOY_MANUAL.md](./doc/DEPLOY_MANUAL.md)** - Deploy manual
-- **[doc/DEPLOYMENT_SECURITY.md](./doc/DEPLOYMENT_SECURITY.md)** - Seguridad en producción
+### **📖 Documentación Técnica**
+- **[docs/RAG_ADAPTATIVO_GEMINI.md](./docs/RAG_ADAPTATIVO_GEMINI.md)** - Sistema RAG con Gemini
+- **[docs/LLM_GATEWAY.md](./docs/LLM_GATEWAY.md)** - Gateway de modelos LLM
+- **[docs/MEJORAS_HIBRIDO.md](./docs/MEJORAS_HIBRIDO.md)** - Sistema híbrido mejorado
+
+### **🔧 Guías Adicionales**
+- **[docs/GUIA_RAPIDA.md](./docs/GUIA_RAPIDA.md)** - Inicio rápido
+- **[docs/APRENDIZAJE_GIT_DOCKER.md](./docs/APRENDIZAJE_GIT_DOCKER.md)** - Tutorial Git y Docker
+- **[docs/DEPLOYMENT_SECURITY.md](./docs/DEPLOYMENT_SECURITY.md)** - Seguridad en producción
 
 ---
 

@@ -1,5 +1,4 @@
 
-
 services:
   backend:
     build:
@@ -9,24 +8,35 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./src:/app/src
-      - ./gunicorn.conf.py:/app/gunicorn.conf.py
+      # Solo volumen de datos (sin montar código fuente en producción)
       - backend_data:/app/data
-      - models_cache:/root/.cache
     command: gunicorn src.main:app --config gunicorn.conf.py
     env_file:
       - .env
     environment:
-      - TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM:-false}
-      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
-      - INTRA_OP_PARALLELISM_THREADS=${INTRA_OP_PARALLELISM_THREADS:-1}
-      - INTER_OP_PARALLELISM_THREADS=${INTER_OP_PARALLELISM_THREADS:-1}
+      - TOKENIZERS_PARALLELISM=false
+      - OMP_NUM_THREADS=2
+    
+    # Límites de recursos para producción
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 60s
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
@@ -39,19 +49,32 @@ services:
       - BACKEND_URL=${BACKEND_URL:-http://backend:8000/api/v1}
       - PYTHONPATH=/app
     volumes:
-      - ./src:/app/src
+      # Solo volumen de datos (sin montar código fuente en producción)
       - backend_data:/app/data
-    command: streamlit run src/adapters/streamlit/app.py --server.port 8501 --server.address 0.0.0.0
-    depends_on:
-      - backend
+    command: streamlit run src/adapters/streamlit/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true --server.runOnSave false
     env_file:
       - .env
+    
+    # Límites de recursos para producción
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 60s
+    
+    depends_on:
+      backend:
+        condition: service_healthy
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -60,19 +83,43 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     ports:
       - "${POSTGRES_PORT_EXTERNAL:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    
+    # Límites de recursos para producción
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    
+    # Configuración optimizada de PostgreSQL
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=128MB"
+      - "-c"
+      - "effective_cache_size=256MB"
+      - "-c"
+      - "max_connections=50"
+      - "-c"
+      - "work_mem=4MB"
 
 volumes:
   backend_data:
-  models_cache:
-    # Define el volumen para la persistencia de la base de datos
+    driver: local
   pg_data:
-    # Volumen para datos de PostgreSQL
+    driver: local

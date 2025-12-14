@@ -28,7 +28,7 @@ from src.adapters.tools.qwen_guardian_client import QwenGuardianClient
 from src.application.services.auth_service import AuthService
 from src.application.services.chat_service import ChatServiceV2
 from src.application.services.chat_service_hibrido_mejorado import (
-    ChatServiceHibridoMejorado,
+    ChatServiceHibridoRefactorizado,
 )
 from src.application.services.embeddings_service import EmbeddingsServiceV2
 from src.application.services.file_processing_service import FileProcessingService
@@ -107,6 +107,7 @@ def get_chat_service(
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
     metrics_service: MetricsService = Depends(get_metrics_service),
+    file_repository: FileRepositoryPort = Depends(get_file_repository),
 ) -> ChatServiceV2:
     return ChatServiceV2(
         llm_client=llm_client,
@@ -115,6 +116,7 @@ def get_chat_service(
         embeddings_service=embeddings_service,
         python_search=python_search,
         metrics_service=metrics_service,
+        file_repository=file_repository,
     )
 
 def get_chat_service_hibrido_mejorado(
@@ -124,21 +126,22 @@ def get_chat_service_hibrido_mejorado(
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
     metrics_service: MetricsService = Depends(get_metrics_service),
-) -> ChatServiceHibridoMejorado:
+    file_repository: FileRepositoryPort = Depends(get_file_repository),
+) -> ChatServiceHibridoRefactorizado:
     """
     Factory para el servicio de chat HÍBRIDO MEJORADO.
 
     Incluye modelos locales (LLaMA3.1:8b, Gemma2:2b) como fallback adicional
     y routing inteligente basado en tipo de pregunta.
     """
-    return ChatServiceHibridoMejorado(
+    return ChatServiceHibridoRefactorizado(
         llm_client=llm_client,
         repository=repository,
         fallback_llm=fallback_llm,
         embeddings_service=embeddings_service,
         python_search=python_search,
         metrics_service=metrics_service,
-        enable_local_fallback=True,  # Habilitar modelos locales
+        file_repository=file_repository,
     )
 
 # --- Dependencias para Endpoints de FastAPI ---
@@ -150,6 +153,7 @@ def get_chat_service_dependency(
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
     metrics_service: MetricsService = Depends(get_metrics_service),
+    file_repository: FileRepositoryPort = Depends(get_file_repository),
 ) -> ChatServiceV2:
     # Importante: NO llamar directamente a get_chat_service() aquí,
     # porque fuera del sistema de dependencias retornaría objetos Depends sin resolver.
@@ -160,6 +164,7 @@ def get_chat_service_dependency(
         embeddings_service=embeddings_service,
         python_search=python_search,
         metrics_service=metrics_service,
+        file_repository=file_repository,
     )
 
 def get_chat_service_hibrido_dependency(
@@ -169,20 +174,21 @@ def get_chat_service_hibrido_dependency(
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
     metrics_service: MetricsService = Depends(get_metrics_service),
-) -> ChatServiceHibridoMejorado:
+    file_repository: FileRepositoryPort = Depends(get_file_repository),
+) -> ChatServiceHibridoRefactorizado:
     """
     Dependencia para endpoints que usan el servicio HÍBRIDO MEJORADO.
 
     Esta es la que deben usar los nuevos endpoints híbridos.
     """
-    return ChatServiceHibridoMejorado(
+    return ChatServiceHibridoRefactorizado(
         llm_client=llm_client,
         repository=repository,
         fallback_llm=fallback_llm,
         embeddings_service=embeddings_service,
         python_search=python_search,
         metrics_service=metrics_service,
-        enable_local_fallback=True,
+        file_repository=file_repository,
     )
 
 def get_embeddings_service_dependency() -> EmbeddingsServiceV2:

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from src.adapters.dependencies import get_chat_service_hibrido_dependency
 from src.application.services.chat_service_hibrido_mejorado import (
-    ChatServiceHibridoMejorado,
+    ChatServiceHibridoRefactorizado,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class HybridSystemStatus(BaseModel):
 
 @router.get("/hibrido/status", response_model=HybridSystemStatus, tags=["Híbrido"])
 async def get_hybrid_system_status(
-    service: ChatServiceHibridoMejorado = Depends(get_chat_service_hibrido_dependency),
+    service: ChatServiceHibridoRefactorizado = Depends(get_chat_service_hibrido_dependency),
 ):
     """
     Retorna el estado completo del sistema híbrido.
@@ -119,7 +119,7 @@ async def get_hybrid_system_status(
 
 @router.get("/hibrido/test", tags=["Híbrido"])
 async def test_hybrid_system(
-    service: ChatServiceHibridoMejorado = Depends(get_chat_service_hibrido_dependency),
+    service: ChatServiceHibridoRefactorizado = Depends(get_chat_service_hibrido_dependency),
 ):
     """
     Ejecuta una prueba rápida del sistema híbrido.
@@ -164,7 +164,7 @@ async def test_hybrid_system(
 
 @router.get("/hibrido/models", tags=["Híbrido"])
 async def get_available_models(
-    service: ChatServiceHibridoMejorado = Depends(get_chat_service_hibrido_dependency),
+    service: ChatServiceHibridoRefactorizado = Depends(get_chat_service_hibrido_dependency),
 ):
     """
     Retorna lista de modelos disponibles con capacidades.

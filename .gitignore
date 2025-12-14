@@ -121,9 +121,6 @@ data/
 .env.local
 .env.*.local
 
-# Docker
-.dockerignore
-
 # Archivos subidos por usuarios (mantener estructura con .gitkeep)
 uploads/*
 !uploads/.gitkeep

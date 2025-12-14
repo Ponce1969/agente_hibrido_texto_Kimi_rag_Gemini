@@ -16,13 +16,15 @@ import traceback
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from src.adapters.db.document_mapper import DocumentMapper
 from src.application.services.metrics_service import MetricsService
+from src.application.services.rag_context_service import RagContextService
 from src.domain.models import ChatMessageCreate, ChatSessionCreate, MessageRole
 
 if TYPE_CHECKING:
     from src.application.services.embeddings_service_v2 import EmbeddingsServiceV2
     from src.domain.models import ChatMessage, ChatSession
-    from src.domain.ports import ChatRepositoryPort, LLMPort
+    from src.domain.ports import ChatRepositoryPort, FileRepositoryPort, LLMPort
     from src.domain.ports.python_search_port import PythonSearchPort, PythonSource
 
 
@@ -52,6 +54,7 @@ class ChatServiceV2:
         embeddings_service: EmbeddingsServiceV2 | None = None,
         python_search: PythonSearchPort | None = None,
         metrics_service: MetricsService | None = None,
+        file_repository: FileRepositoryPort | None = None,
     ) -> None:
         """
         Inicializa el servicio de chat.
@@ -63,12 +66,20 @@ class ChatServiceV2:
             embeddings_service: Servicio de embeddings para RAG (opcional)
             python_search: Servicio de búsqueda Python (opcional)
             metrics_service: Servicio de métricas (opcional)
+            file_repository: Repositorio de archivos (opcional, para RAG context)
         """
         self.llm = llm_client
         self.repo = repository
         self.fallback_llm = fallback_llm
         self.embeddings = embeddings_service
         self.python_search = python_search
+
+        # Servicios para gestión de contexto RAG
+        self.context_service = None
+        self.document_mapper = None
+        if file_repository:
+            self.context_service = RagContextService(file_repository)
+            self.document_mapper = DocumentMapper(file_repository)
 
         # Servicio de métricas (inyectado o crear uno por defecto)
         if metrics_service is None:
@@ -156,6 +167,40 @@ class ChatServiceV2:
         return detailed_sessions
 
 
+    def _resolve_target_file_id(
+        self,
+        session_id: str,
+        user_message: str,
+        provided_file_id: int | None
+    ) -> int | None:
+        """
+        Resuelve qué archivo usar como contexto para RAG.
+
+        Prioridad:
+        1. ID explícito en el mensaje (ej: "ID:5")
+        2. ID proporcionado por la UI (sidebar select)
+        3. Referencia contextual (ej: "este documento") apuntando al último usado
+        """
+        # 1. Buscar mención explícita "ID:X" en el mensaje
+        if self.document_mapper:
+            explicit_id = self.document_mapper.parse_document_reference_from_text(user_message)
+            if explicit_id:
+                logger.info(f"📄 Detectada referencia explícita a archivo ID:{explicit_id}")
+                return explicit_id
+
+        # 2. Usar ID proporcionado por UI (si existe)
+        if provided_file_id:
+            return provided_file_id
+
+        # 3. Verificar referencia contextual ("este pdf")
+        if self.context_service and self.context_service.is_referencing_current_document(user_message):
+            context_id = self.context_service.get_current_file_id(session_id)
+            if context_id:
+                logger.info(f"📄 Detectada referencia contextual a archivo ID:{context_id}")
+                return context_id
+
+        return None
+
     async def handle_message(
         self,
         session_id: str,
@@ -189,6 +234,19 @@ class ChatServiceV2:
         """
         # Iniciar timer para métricas
         start_time = time.time()
+
+        # --- RESOLUCIÓN DE CONTEXTO RAG ---
+        # Determinar el file_id real a usar
+        resolved_file_id = self._resolve_target_file_id(session_id, user_message, file_id)
+
+        # Si se resolvió un archivo, actualizar el contexto de la sesión
+        if resolved_file_id:
+            if self.context_service:
+                self.context_service.set_current_file_id(session_id, resolved_file_id)
+            # Usar el ID resuelto en lugar del proporcionado
+            file_id = resolved_file_id
+        # ----------------------------------
+
         rag_chunks_count = 0
         used_bear = False
         bear_sources_count = 0

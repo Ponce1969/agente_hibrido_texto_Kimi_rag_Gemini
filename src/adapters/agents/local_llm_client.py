@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from src.domain.ports import LLMPort
+
+if TYPE_CHECKING:
+    from src.domain.models import ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,8 @@ class LocalLLMClient(LLMPort):
     async def get_chat_completion(
         self,
         system_prompt: str,
-        messages: list[dict[str, str]],
+        messages: list[ChatMessage],
+        *,
         max_tokens: int | None = None,  # Ignorado por Ollama, pero tipado
         temperature: float | None = None,
         **_: Any,
@@ -73,11 +77,13 @@ class LocalLLMClient(LLMPort):
         ]
 
         for msg in messages:
-            if msg.get("role") != "system":
+            # Asumimos que msg es un objeto ChatMessage, accedemos a sus atributos
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            if role != "system":
                 ollama_messages.append(
                     {
-                        "role": msg.get("role", "user"),
-                        "content": msg.get("content", ""),
+                        "role": role,
+                        "content": msg.content,
                     }
                 )
 
@@ -134,6 +140,30 @@ class LocalLLMClient(LLMPort):
         except Exception as exc:
             logger.error("Error en LocalLLMClient: %s", exc)
             raise
+
+    async def get_chat_completion_stream(
+        self,
+        system_prompt: str,
+        messages: list[ChatMessage],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
+        """
+        Obtiene una respuesta del modelo en modo streaming.
+        Por ahora, implementado como no-streaming para cumplir con la interfaz.
+        """
+        response, _ = await self.get_chat_completion(
+            system_prompt=system_prompt,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return response
+
+    def estimate_tokens(self, text: str) -> int:
+        """Estima tokens (aprox 4 chars por token)."""
+        return max(1, len(text) // 4)
 
     async def health_check(self) -> bool:
         """
