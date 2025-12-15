@@ -1421,7 +1421,7 @@ requires-dist = [
     { name = "slowapi", specifier = ">=0.1.9" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "sqlmodel", specifier = ">=0.0.24" },
-    { name = "streamlit", specifier = ">=1.32.0" },
+    { name = "streamlit", specifier = ">=1.40.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
 provides-extras = ["dev"]
