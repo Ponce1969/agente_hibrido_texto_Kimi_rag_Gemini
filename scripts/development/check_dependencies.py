@@ -38,15 +38,14 @@ def main():
     
     # Dependencias críticas
     critical_deps = [
-        ("sentence-transformers", "sentence_transformers"),
         ("psycopg2", "psycopg2"),
         ("pgvector", "pgvector"),
         ("pypdf", "pypdf"),
-        ("torch", "torch"),
         ("numpy", "numpy"),
         ("sqlalchemy", "sqlalchemy"),
         ("fastapi", "fastapi"),
         ("streamlit", "streamlit"),
+        ("httpx", "httpx"),
     ]
     
     print("\n📦 DEPENDENCIAS CRÍTICAS:")
@@ -69,27 +68,27 @@ def main():
     except Exception as e:
         print(f"❌ Error verificando recursos: {e}")
     
-    # Verificar modelo de embeddings
-    print("\n🤖 MODELO DE EMBEDDINGS:")
+    # Verificar Gemini API
+    print("\n🤖 GEMINI API (EMBEDDINGS):")
     print("-" * 30)
     try:
-        from sentence_transformers import SentenceTransformer
-        model_name = "sentence-transformers/all-MiniLM-L6-v2"
-        print(f"Modelo objetivo: {model_name}")
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
         
-        # Intentar cargar el modelo (esto puede tomar tiempo la primera vez)
-        print("Verificando disponibilidad del modelo...")
-        model = SentenceTransformer(model_name)
-        print(f"✅ Modelo cargado correctamente")
-        print(f"   Dimensiones: {model.get_sentence_embedding_dimension()}")
-        print(f"   Dispositivo: {model.device}")
-        
-        # Liberar memoria
-        del model
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            print(f"✅ GEMINI_API_KEY configurada")
+            print(f"   Modelo: text-embedding-004")
+            print(f"   Dimensiones: 768")
+            print(f"   Tipo: Cloud API (sin carga local)")
+        else:
+            print(f"❌ GEMINI_API_KEY no configurada en .env")
+            missing_deps.append("GEMINI_API_KEY")
         
     except Exception as e:
-        print(f"❌ Error con modelo de embeddings: {e}")
-        missing_deps.append("sentence-transformers")
+        print(f"❌ Error verificando Gemini API: {e}")
+        missing_deps.append("GEMINI_API_KEY")
     
     # Verificar PostgreSQL
     print("\n🐘 POSTGRESQL:")
@@ -115,17 +114,17 @@ def main():
     if missing_deps:
         print(f"❌ Dependencias faltantes: {', '.join(missing_deps)}")
         print("\n🔧 COMANDOS DE INSTALACIÓN:")
-        print("pip install sentence-transformers psycopg2-binary pgvector pypdf torch")
+        print("pip install psycopg2-binary pgvector pypdf httpx")
         print("# O usando uv:")
-        print("uv add sentence-transformers psycopg2-binary pgvector pypdf torch")
+        print("uv sync")
     else:
         print("✅ Todas las dependencias críticas están instaladas")
     
-    print("\n💡 RECOMENDACIONES PARA PC DE BAJOS RECURSOS:")
-    print("- Usar EMBEDDING_BATCH_SIZE=2 en .env")
-    print("- Usar EMBEDDING_CHUNK_SIZE=600 en .env")
-    print("- Cerrar otras aplicaciones durante la indexación")
-    print("- Procesar PDFs de máximo 25MB")
+    print("\n💡 RECOMENDACIONES:")
+    print("- Configurar GEMINI_API_KEY en .env")
+    print("- Embeddings se procesan en cloud (sin carga local)")
+    print("- Límites de RAM configurados en docker-compose.yml")
+    print("- Backend: 1GB max, Frontend: 768MB max, Postgres: 512MB max")
 
 if __name__ == "__main__":
     main()

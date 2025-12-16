@@ -5,7 +5,9 @@ FROM python:3.12-slim as builder
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/root/.cache/huggingface \
+    TRANSFORMERS_CACHE=/root/.cache/huggingface
 
 # Instalar uv sin cache
 RUN pip install --no-cache-dir uv
@@ -16,12 +18,15 @@ WORKDIR /app
 # Copiar los archivos de dependencias
 COPY pyproject.toml uv.lock ./
 
-# Instalar SOLO dependencias de producción (sin dev) y limpiar
-RUN uv venv /app/.venv && \
+# Instalar SOLO dependencias de producción (sin dev)
+# Usar --mount=type=cache para cachear descargas de modelos ML
+RUN --mount=type=cache,target=/root/.cache/huggingface \
+    --mount=type=cache,target=/root/.cache/pip \
+    uv venv /app/.venv && \
     . /app/.venv/bin/activate && \
     uv sync --no-dev && \
-    # Limpiar caches para reducir tamaño
-    rm -rf /root/.cache /tmp/* /var/tmp/*
+    # Limpiar SOLO temporales (mantener cache de modelos)
+    rm -rf /tmp/* /var/tmp/*
 
 # Etapa 2: Final - Crear la imagen de producción
 FROM python:3.12-slim
