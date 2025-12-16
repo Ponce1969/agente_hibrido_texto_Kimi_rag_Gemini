@@ -93,7 +93,10 @@ class BearPythonTool(PythonSearchPort):
         - Keywords agregadas automáticamente (best practices, pep-8 guide)
         - Signos de interrogación redundantes
         - Espacios extras
+        - Normaliza caracteres especiales para compatibilidad con API
         """
+        import unicodedata
+
         cleaned = raw_query
 
         # 1. Eliminar prefijos del modelo
@@ -121,7 +124,12 @@ class BearPythonTool(PythonSearchPort):
         # 5. Eliminar signos de interrogación iniciales/finales redundantes
         cleaned = re.sub(r"^[¿?]+|[¿?]+$", "", cleaned)
 
-        # 6. Limpiar espacios múltiples
+        # 6. Normalizar caracteres especiales (acentos, ñ, etc.) para compatibilidad con API
+        # Convertir "Qué" -> "Que", "características" -> "caracteristicas"
+        cleaned = unicodedata.normalize('NFKD', cleaned)
+        cleaned = cleaned.encode('ASCII', 'ignore').decode('ASCII')
+
+        # 7. Limpiar espacios múltiples
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
         return cleaned if cleaned else raw_query  # Fallback si queda vacío

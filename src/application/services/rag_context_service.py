@@ -26,6 +26,11 @@ class RagContextService:
         if file_name:
             self.session_contexts[session_id]["current_file_name"] = file_name
 
+    def is_referencing_current_document(self, query: str) -> bool:
+        """Detecta si el mensaje hace referencia al documento actual"""
+        reference_keywords = ["este", "ese", "aquel", "el documento", "el pdf", "el libro", "este archivo"]
+        return any(keyword in query.lower() for keyword in reference_keywords)
+
     async def resolve_file_reference(self, session_id: str, query: str) -> int | None:
         """Resuelve referencias como 'ID:5' o 'este PDF' a file_id"""
         # 1. Buscar referencia explícita: "ID:5"
