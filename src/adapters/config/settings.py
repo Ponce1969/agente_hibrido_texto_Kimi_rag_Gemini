@@ -39,6 +39,10 @@ class Settings(BaseSettings):
         60,
         description="Tiempo de expiración de tokens JWT en minutos (default: 60 = 1 hora)"
     )
+    rag_api_key: str = Field(
+        ...,
+        description="API Key para proteger el endpoint interno del LLM Gateway (acceso desde CLI)."
+    )
 
     # --- Modelo LLM ---
     groq_model_name: str = Field(
@@ -123,7 +127,6 @@ class Settings(BaseSettings):
         "https://api.search.brave.com/res/v1/web/search",
         description="URL base de Brave Search API para búsquedas web especializadas",
     )
-    bear_api_key: str = Field(..., description="API key para Brave Search API (búsqueda Python)")
     bear_search_enabled: bool = Field(
         True,
         description="Habilitar/deshabilitar búsqueda con Bear API",

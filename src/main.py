@@ -100,6 +100,6 @@ app.include_router(llm_gateway.router, prefix="/api/internal", tags=["LLM Gatewa
 
 # Endpoint de health check
 @app.get("/health", tags=["Monitoring"])
-def health_check():
+def health_check() -> dict:
     """Endpoint para verificar que la API está funcionando."""
     return {"status": "healthy", "service": "Asistente IA con RAG"}

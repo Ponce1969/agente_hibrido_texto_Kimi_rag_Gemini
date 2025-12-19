@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
 """
 Cliente de ejemplo para que modelos locales (LLaMA, Gemma) usen el LLM Gateway.
-
-Este script muestra cómo los modelos locales pueden consultar al backend
-a través del endpoint interno /api/internal/llm-gateway.
-
-Uso:
-    python local_llm_gateway_client.py "¿Qué es la ortogonalidad?"
-    python local_llm_gateway_client.py "hola" --mode kimi
-    python local_llm_gateway_client.py "explicar Python" --mode rag
+Actualizado para usar autenticación vía RAG_API_KEY.
 """
 import argparse
 import json
+import os
 import sys
 import time
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
 
+# Cargar variables de entorno para obtener RAG_API_KEY
+load_dotenv()
 
 class LLMGatewayClient:
     """Cliente para comunicarse con el LLM Gateway interno."""
@@ -26,19 +23,20 @@ class LLMGatewayClient:
         self.base_url = base_url.rstrip('/')
         self.gateway_url = f"{self.base_url}/api/internal/llm-gateway"
         self.status_url = f"{self.base_url}/api/internal/llm-gateway/status"
+        self.api_key = os.getenv("RAG_API_KEY")
+
+        if not self.api_key:
+            print("⚠️ ADVERTENCIA: RAG_API_KEY no encontrada en variables de entorno.")
+
+    def _get_headers(self) -> dict[str, str]:
+        """Obtiene headers con autenticación."""
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        return headers
 
     def ask(self, query: str, mode: str = "auto", session_id: int = 1) -> dict[str, Any]:
-        """
-        Envía una pregunta al LLM Gateway.
-
-        Args:
-            query: La pregunta a realizar
-            mode: "auto" | "kimi" | "rag"
-            session_id: ID de sesión para persistencia
-
-        Returns:
-            Diccionario con la respuesta y metadatos
-        """
+        """Envía una pregunta al LLM Gateway."""
         payload = {
             "query": query,
             "mode": mode,
@@ -50,7 +48,12 @@ class LLMGatewayClient:
             print(f"📍 Modo: {mode} | Session: {session_id}")
 
             start_time = time.time()
-            response = requests.post(self.gateway_url, json=payload, timeout=30)
+            response = requests.post(
+                self.gateway_url, 
+                json=payload, 
+                headers=self._get_headers(),
+                timeout=30
+            )
             response_time = time.time() - start_time
 
             if response.status_code == 200:
@@ -59,6 +62,9 @@ class LLMGatewayClient:
                 print(f"🎯 Modo usado: {data['mode_used']}")
                 print(f"💾 Cache: {'HIT' if data['cached'] else 'MISS'}")
                 return data
+            elif response.status_code == 401:
+                print("⛔ Error de autenticación: API Key inválida o faltante.")
+                return {"error": "unauthorized", "status_code": 401}
             else:
                 print(f"❌ Error {response.status_code}: {response.text}")
                 return {"error": response.text, "status_code": response.status_code}
@@ -76,7 +82,7 @@ class LLMGatewayClient:
     def get_status(self) -> dict[str, Any]:
         """Obtiene el estado del gateway y estadísticas de cache."""
         try:
-            response = requests.get(self.status_url)
+            response = requests.get(self.status_url, headers=self._get_headers())
             if response.status_code == 200:
                 return response.json()
             else:
@@ -131,8 +137,6 @@ class LLMGatewayClient:
                     print("-" * 40)
                     print(result['answer'])
                     print("-" * 40)
-
-                    # Incrementar session_id para simular conversación
                     session_id += 1
 
             except KeyboardInterrupt:

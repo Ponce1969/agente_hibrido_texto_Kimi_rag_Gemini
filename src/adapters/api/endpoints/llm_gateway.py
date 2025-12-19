@@ -9,18 +9,40 @@ Flujo: LLaMA (local) → /api/internal/llm-gateway → Backend → RAG/Kimi → 
 """
 import hashlib
 import logging
+import secrets
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Security, status
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
+from src.adapters.config.settings import settings
 from src.adapters.dependencies import get_chat_service_dependency
 from src.application.services.chat_service import ChatServiceV2
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# --- Seguridad: API Key ---
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
+    """Verifica la API Key para acceso interno."""
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key faltante",
+        )
+
+    # Uso de compare_digest para evitar timing attacks
+    if not secrets.compare_digest(api_key, settings.rag_api_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key inválida",
+        )
+    return api_key
 
 
 # --- Schemas del Gateway ---
@@ -155,14 +177,15 @@ def should_use_rag(query: str) -> bool:
 
 # --- Endpoint del Gateway ---
 
-@router.post("/llm-gateway", response_model=LLMGatewayResponse)
+@router.post("/llm-gateway", response_model=LLMGatewayResponse, dependencies=[Depends(verify_api_key)])
 async def llm_gateway(
     request: LLMGatewayRequest,
     service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """
     Gateway interno para modelos locales LLaMA/Gemma.
-
+    
+    REQUIERE AUTENTICACIÓN (X-API-Key).
     Este endpoint permite que los modelos locales accedan al RAG y Kimi
     sin modificar el frontend. Incluye cache y heurísticas automáticas.
     """
