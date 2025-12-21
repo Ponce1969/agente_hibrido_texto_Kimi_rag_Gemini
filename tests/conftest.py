@@ -14,6 +14,11 @@ from sqlalchemy.pool import StaticPool
 os.environ["TESTING"] = "true"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["DATABASE_URL_PG"] = "postgresql://test:test@localhost:5432/test_db"
+os.environ["RAG_API_KEY"] = "test-api-key"
+os.environ["GROQ_API_KEY"] = "test-groq-key"
+os.environ["GEMINI_API_KEY"] = "test-gemini-key"
+os.environ["BEAR_API_KEY"] = "test-bear-key"
+os.environ["JWT_SECRET_KEY"] = "test-secret-key"
 
 
 @pytest.fixture(scope="session")

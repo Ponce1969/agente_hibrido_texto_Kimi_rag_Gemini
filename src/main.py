@@ -15,11 +15,13 @@ from src.adapters.api.endpoints import (
     embeddings,
     files,
     guardian,
+    health,
     hibrido_status,
     llm_gateway,
     metrics,
     pg,
 )
+from src.adapters.api.exception_handlers import register_exception_handlers
 from src.adapters.api.middleware.guardian_middleware import GuardianMiddleware
 from src.adapters.config.settings import settings
 from src.adapters.db.database import create_db_and_tables
@@ -60,6 +62,9 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Registrar manejadores de excepciones según contrato API-CLI
+register_exception_handlers(app)
+
 # 🛡️ Agregar Guardian Middleware (ANTES de CORS)
 if settings.guardian_enabled:
     print("🛡️ Guardian de seguridad activado")
@@ -97,9 +102,4 @@ app.include_router(metrics.router, prefix="/api/v1")  # Métricas de tokens (tag
 app.include_router(guardian.router, prefix="/api/v1")  # Guardian de seguridad
 app.include_router(hibrido_status.router, prefix="/api/v1")  # Sistema Híbrido Mejorado
 app.include_router(llm_gateway.router, prefix="/api/internal", tags=["LLM Gateway - Internal"])  # Gateway para modelos locales
-
-# Endpoint de health check
-@app.get("/health", tags=["Monitoring"])
-def health_check() -> dict:
-    """Endpoint para verificar que la API está funcionando."""
-    return {"status": "healthy", "service": "Asistente IA con RAG"}
+app.include_router(health.router, prefix="/api/v1", tags=["Monitoring"])  # Health check con observabilidad

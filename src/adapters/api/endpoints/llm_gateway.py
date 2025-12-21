@@ -184,7 +184,7 @@ async def llm_gateway(
 ):
     """
     Gateway interno para modelos locales LLaMA/Gemma.
-    
+
     REQUIERE AUTENTICACIÓN (X-API-Key).
     Este endpoint permite que los modelos locales accedan al RAG y Kimi
     sin modificar el frontend. Incluye cache y heurísticas automáticas.
