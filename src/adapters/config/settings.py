@@ -25,6 +25,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # --- Entorno ---
+    environment: str = Field(
+        "production",
+        description="Entorno de ejecución: development o production"
+    )
+
     # --- API Keys y Secretos ---
     groq_api_key: str = Field(..., description="API key para Groq.")
     gemini_api_key: str | None = Field(None, description="API key para Gemini (Google AI Studio)")

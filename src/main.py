@@ -56,6 +56,10 @@ app = FastAPI(
     description="Una API para interactuar con un agente de IA especializado en Python.",
     version="0.1.0",
     lifespan=lifespan,
+    # Deshabilitar Swagger UI en producción por seguridad
+    docs_url="/docs" if settings.environment == "development" else None,
+    redoc_url="/redoc" if settings.environment == "development" else None,
+    openapi_url="/openapi.json" if settings.environment == "development" else None,
 )
 
 # Agregar Rate Limiter al estado de la app
