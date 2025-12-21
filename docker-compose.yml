@@ -14,6 +14,7 @@ services:
     env_file:
       - .env
     environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
       - TOKENIZERS_PARALLELISM=false
       - OMP_NUM_THREADS=2
     
