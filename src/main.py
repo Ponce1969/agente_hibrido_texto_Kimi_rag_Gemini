@@ -75,7 +75,8 @@ if settings.guardian_enabled:
     app.add_middleware(
         GuardianMiddleware,
         guardian_service=get_guardian_service_for_middleware(),
-        enabled=settings.guardian_enabled
+        enabled=settings.guardian_enabled,
+        rag_api_key=settings.rag_api_key  # Inyectar RAG_API_KEY para bypass del CLI
     )
 else:
     print("⚠️ Guardian de seguridad desactivado")

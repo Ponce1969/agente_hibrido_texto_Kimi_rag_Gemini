@@ -1,8 +1,11 @@
 """
 Middleware de seguridad con Guardian.
 Intercepta requests al chat y valida mensajes.
+
+BYPASS: Requests con RAG_API_KEY válida bypasean el Guardian (CLI autenticado).
 """
 import logging
+import secrets
 from collections.abc import Callable
 
 from fastapi import Request, Response, status
@@ -31,11 +34,13 @@ class GuardianMiddleware(BaseHTTPMiddleware):
         self,
         app,
         guardian_service: GuardianService,
-        enabled: bool = True
+        enabled: bool = True,
+        rag_api_key: str | None = None
     ):
         super().__init__(app)
         self.guardian_service = guardian_service
         self.enabled = enabled
+        self.rag_api_key = rag_api_key
 
     async def dispatch(
         self,
@@ -44,6 +49,8 @@ class GuardianMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         """
         Intercepta requests y valida mensajes si es necesario.
+
+        BYPASS: Si el request tiene X-API-Key válida (RAG_API_KEY), se salta el Guardian.
         """
         # Si el Guardian está desactivado, pasar sin validar
         if not self.enabled:
@@ -56,6 +63,14 @@ class GuardianMiddleware(BaseHTTPMiddleware):
         # Solo validar POST requests
         if request.method != "POST":
             return await call_next(request)
+
+        # 🔑 BYPASS: Verificar si viene del CLI con RAG_API_KEY
+        if self.rag_api_key:
+            api_key = request.headers.get("X-API-Key")
+            if api_key and secrets.compare_digest(api_key, self.rag_api_key):
+                client_host = request.client.host if request.client else "unknown"
+                logger.info(f"🔓 Bypass: Request desde {client_host} validado con RAG_API_KEY")
+                return await call_next(request)
 
         try:
             # Leer el body del request
