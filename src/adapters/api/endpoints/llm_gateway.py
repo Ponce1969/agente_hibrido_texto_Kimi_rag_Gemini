@@ -215,7 +215,7 @@ async def llm_gateway(
                 session_id=str(request.session_id),
                 user_message=request.query,
                 agent_mode="Arquitecto Python Senior",  # Modo que usa RAG
-                file_id=1,  # Usar el archivo de libros técnicos
+                file_id=None,  # Buscar en todos los PDFs indexados
                 use_internet=False
             )
         elif mode_used == "kimi":
