@@ -39,7 +39,7 @@ class BackendClient:
     def test_connection(self) -> tuple[bool, str]:
         """Prueba la conexión con el backend."""
         try:
-            response = httpx.get(f"{self.base_url.replace('/api/v1', '')}/health", timeout=5)
+            response = httpx.get(f"{self.base_url}/health", timeout=5)
             if response.status_code == 200:
                 return True, f"✅ Conectado a {self.base_url}"
             else:
