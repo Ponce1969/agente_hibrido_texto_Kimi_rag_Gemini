@@ -11,6 +11,8 @@ Ventajas: Sin carga en CPU/RAM, mayor calidad, procesamiento en cloud
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import TYPE_CHECKING
 
 import httpx
@@ -19,6 +21,8 @@ import numpy.typing as npt
 
 from src.adapters.config.settings import settings
 from src.domain.ports.embeddings_port import EmbeddingsPort, SearchResult
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.domain.models.file_models import FileDocument, FileSection
@@ -65,19 +69,27 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
                 "Configura GEMINI_API_KEY en el archivo .env"
             )
 
-    async def generate_embedding(self, text: str) -> EmbeddingVector:
+    async def generate_embedding(
+        self,
+        text: str,
+        *,
+        max_retries: int = 5,
+        base_delay: float = 2.0,
+    ) -> EmbeddingVector:
         """
-        Genera un embedding vectorial usando Gemini API.
+        Genera un embedding vectorial usando Gemini API con retry automático.
 
         Args:
             text: Texto a convertir en embedding
+            max_retries: Máximo número de reintentos (default: 5)
+            base_delay: Delay base en segundos para exponential backoff (default: 2.0)
 
         Returns:
             Vector de embedding normalizado (768 dims)
 
         Raises:
             ValueError: Si el texto está vacío
-            RuntimeError: Si hay error en la API
+            RuntimeError: Si hay error en la API después de todos los reintentos
         """
         # Guard clause: validar texto
         if not text.strip():
@@ -94,57 +106,132 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
             "model": f"models/{self.EMBEDDING_MODEL}",
             "content": {"parts": [{"text": text}]},
             "taskType": "RETRIEVAL_DOCUMENT",
-            "outputDimensionality": self.EMBEDDING_DIMENSION,  # MRL: reduce a 768 dims
+            "outputDimensionality": self.EMBEDDING_DIMENSION,
         }
 
-        # Llamar a la API
-        response = await self.client.post(
-            url,
-            json=payload,
-            timeout=httpx.Timeout(10.0, connect=10.0, read=30.0, write=10.0, pool=10.0),
-        )
-        response.raise_for_status()
+        last_error: Exception | None = None
 
-        # Extraer embedding de la respuesta
-        data = response.json()
-        embedding_values = data.get("embedding", {}).get("values", [])
+        for attempt in range(max_retries):
+            try:
+                # Llamar a la API
+                response = await self.client.post(
+                    url,
+                    json=payload,
+                    timeout=httpx.Timeout(
+                        30.0, connect=10.0, read=60.0, write=10.0, pool=10.0
+                    ),
+                )
 
-        if not embedding_values:
-            raise RuntimeError("Gemini no retornó embedding válido")
+                # Manejar errores HTTP específicos
+                if response.status_code == 429:
+                    # Rate limit - esperar y reintentar
+                    retry_after = int(
+                        response.headers.get("retry-after", base_delay * (2**attempt))
+                    )
+                    logger.warning(
+                        f"⚠️ Rate limit (429) - intento {attempt + 1}/{max_retries}. "
+                        f"Esperando {retry_after}s..."
+                    )
+                    await asyncio.sleep(retry_after)
+                    continue
 
-        # Validar dimensión del vector (MRL safety check)
-        if len(embedding_values) != self.EMBEDDING_DIMENSION:
-            raise RuntimeError(
-                f"Dimensión de embedding inesperada: {len(embedding_values)} "
-                f"(esperado: {self.EMBEDDING_DIMENSION}). "
-                f"Verifica que MRL esté configurado correctamente."
-            )
+                elif response.status_code >= 500:
+                    # Error del servidor - esperar y reintentar
+                    delay = base_delay * (2**attempt)
+                    logger.warning(
+                        f"⚠️ Error del servidor ({response.status_code}) - "
+                        f"intento {attempt + 1}/{max_retries}. "
+                        f"Esperando {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                    continue
 
-        # Convertir a numpy array y normalizar
-        embedding = np.array(embedding_values, dtype=np.float32)
+                response.raise_for_status()
 
-        # Normalizar el vector (para similitud coseno)
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = embedding / norm
+                # Extraer embedding de la respuesta
+                data = response.json()
+                embedding_values = data.get("embedding", {}).get("values", [])
 
-        return embedding
+                if not embedding_values:
+                    raise RuntimeError("Gemini no retornó embedding válido")
+
+                # Validar dimensión del vector (MRL safety check)
+                if len(embedding_values) != self.EMBEDDING_DIMENSION:
+                    raise RuntimeError(
+                        f"Dimensión de embedding inesperada: {len(embedding_values)} "
+                        f"(esperado: {self.EMBEDDING_DIMENSION}). "
+                        f"Verifica que MRL esté configurado correctamente."
+                    )
+
+                # Convertir a numpy array y normalizar
+                embedding = np.array(embedding_values, dtype=np.float32)
+
+                # Normalizar el vector (para similitud coseno)
+                norm = np.linalg.norm(embedding)
+                if norm > 0:
+                    embedding = embedding / norm
+
+                if attempt > 0:
+                    logger.info(
+                        f"✅ Embedding generado exitosamente después de {attempt + 1} intentos"
+                    )
+
+                return embedding
+
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code == 429:
+                    # Ya manejado arriba, pero por si acaso
+                    retry_after = int(
+                        e.response.headers.get("retry-after", base_delay * (2**attempt))
+                    )
+                    logger.warning(f"⚠️ Rate limit (429) - retry-after: {retry_after}s")
+                    await asyncio.sleep(retry_after)
+                    continue
+                elif e.response.status_code >= 500:
+                    delay = base_delay * (2**attempt)
+                    logger.warning(
+                        f"⚠️ Error {e.response.status_code} - esperando {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    # Error 400, 401, 403, 404 - no reintentar
+                    raise RuntimeError(
+                        f"Error en Gemini API: {e.response.status_code} - {e.response.text}"
+                    ) from e
+
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                last_error = e
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    f"⚠️ Error de conexión ({type(e).__name__}) - "
+                    f"intento {attempt + 1}/{max_retries}. "
+                    f"Esperando {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+                continue
+
+        # Si llegamos aquí, todos los reintentos fallaron
+        raise RuntimeError(
+            f"Falló después de {max_retries} intentos. Último error: {last_error}"
+        ) from last_error
 
     async def generate_embeddings_batch(
         self,
         texts: list[str],
         *,
-        batch_size: int = 32,
+        batch_size: int = 5,  # Reducido de 32 a 5 para evitar rate limit
     ) -> list[EmbeddingVector]:
         """
         Genera embeddings para múltiples textos en batch.
 
-        Nota: Gemini API procesa uno a uno, pero lo hacemos
-        concurrentemente para aprovechar async.
+        Nota: Usa batch_size pequeño para evitar rate limit de Gemini.
+        Cada batch tiene delays para respetar los límites de la API.
 
         Args:
             texts: Lista de textos a procesar
-            batch_size: Tamaño del batch (usado para limitar concurrencia)
+            batch_size: Tamaño del batch (default: 5 para evitar rate limit)
 
         Returns:
             Lista de vectores de embedding
@@ -154,19 +241,31 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
             return []
 
         embeddings: list[EmbeddingVector] = []
+        total_batches = (len(texts) + batch_size - 1) // batch_size
 
         # Procesar en batches para no saturar la API
         for i in range(0, len(texts), batch_size):
+            batch_num = i // batch_size + 1
             batch = texts[i : i + batch_size]
 
-            # Generar embeddings concurrentemente dentro del batch
-            import asyncio
+            logger.info(
+                f"📦 Batch {batch_num}/{total_batches}: "
+                f"procesando {len(batch)} chunks..."
+            )
 
+            # Generar embeddings concurrentemente dentro del batch
             batch_embeddings = await asyncio.gather(
                 *[self.generate_embedding(text) for text in batch]
             )
             embeddings.extend(batch_embeddings)
 
+            # Delay entre batches para evitar rate limit
+            if i + batch_size < len(texts):
+                delay = 1.5  # 1.5 segundos entre batches
+                logger.debug(f"⏳ Esperando {delay}s entre batches...")
+                await asyncio.sleep(delay)
+
+        logger.info(f"✅ {len(embeddings)} embeddings generados")
         return embeddings
 
     async def store_embedding(
