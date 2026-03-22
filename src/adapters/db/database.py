@@ -12,15 +12,19 @@ from src.domain.models.user import User  # noqa: F401
 
 def sanitize_db_url(url: str) -> str:
     """
-    Oculta credenciales en URLs de base de datos para logs seguros.
+    Oculta credenciales y detalles en URLs de base de datos para logs seguros.
 
     Ejemplo:
         postgresql://user:password@host:5432/db
-        -> postgresql://user:***@host:5432/db
+        -> PostgreSQL (base de datos configurada)
     """
-    # Patrón para capturar: scheme://user:password@host:port/db
-    pattern = r"(://[^:]+:)([^@]+)(@)"
-    return re.sub(pattern, r"\1***\3", url)
+    if "postgresql" in url.lower():
+        return "PostgreSQL (pgvector)"
+    elif "sqlite" in url.lower():
+        return "SQLite (desarrollo)"
+    else:
+        return "Base de datos configurada"
+
 
 # Importar modelos de embeddings solo si usamos PostgreSQL para RAG
 # (Los embeddings van en PostgreSQL, no en SQLite)
@@ -45,7 +49,7 @@ if settings.db_backend == "postgresql" and settings.database_url_pg:
     # Configuración para PostgreSQL
     engine = create_engine(
         settings.effective_database_url,
-        echo=False  # Cambiar a True para debugging
+        echo=False,  # Cambiar a True para debugging
     )
 else:
     # Configuración para SQLite con threading
@@ -55,8 +59,9 @@ else:
             "check_same_thread": False,
         },
         poolclass=StaticPool,
-        echo=False  # Cambiar a True para debugging
+        echo=False,  # Cambiar a True para debugging
     )
+
 
 def create_db_and_tables():
     """Crea las tablas de la base de datos si no existen"""
@@ -106,6 +111,7 @@ def create_db_and_tables():
         except Exception:
             # Es probable que la columna ya exista; ignorar en dev
             pass
+
 
 def get_session() -> Generator[Session, None, None]:
     """Dependency para obtener sesión de base de datos"""
