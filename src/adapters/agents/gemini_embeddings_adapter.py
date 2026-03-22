@@ -31,8 +31,8 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
     Adaptador de Gemini Embeddings que implementa EmbeddingsPort.
 
     Características:
-    - Usa API de Google Gemini (text-embedding-004)
-    - 768 dimensiones (vs 384 del modelo local)
+    - Usa API de Google Gemini (gemini-embedding-001)
+    - 3072 dimensiones (default, compatible con MRL)
     - Sin carga en CPU/RAM local
     - Procesamiento paralelo en cloud
     - Gratis hasta 1500 requests/día
@@ -40,8 +40,8 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
     Optimizado para hardware de bajos recursos (AMD APU A10).
     """
 
-    EMBEDDING_MODEL = "text-embedding-004"
-    EMBEDDING_DIMENSION = 768
+    EMBEDDING_MODEL = "gemini-embedding-001"
+    EMBEDDING_DIMENSION = 3072
 
     def __init__(self, client: httpx.AsyncClient) -> None:
         """
@@ -89,9 +89,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         # Payload para la API
         payload = {
             "model": f"models/{self.EMBEDDING_MODEL}",
-            "content": {
-                "parts": [{"text": text}]
-            }
+            "content": {"parts": [{"text": text}]},
         }
 
         # Llamar a la API
@@ -146,10 +144,11 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
 
         # Procesar en batches para no saturar la API
         for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
+            batch = texts[i : i + batch_size]
 
             # Generar embeddings concurrentemente dentro del batch
             import asyncio
+
             batch_embeddings = await asyncio.gather(
                 *[self.generate_embedding(text) for text in batch]
             )
@@ -192,7 +191,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         embedding_list = embedding.tolist()
 
         # 🛡️ SANITIZAR: Eliminar caracteres NUL (0x00) que PostgreSQL no acepta
-        sanitized_text = text.replace('\x00', '')
+        sanitized_text = text.replace("\x00", "")
 
         # Crear chunk con metadatos y guardar
         chunk = EmbeddingChunk(
@@ -342,7 +341,9 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         )
 
         # Guardar cada embedding con metadatos
-        for idx, (section, embedding) in enumerate(zip(sections, embeddings, strict=False)):
+        for idx, (section, embedding) in enumerate(
+            zip(sections, embeddings, strict=False)
+        ):
             await self.store_embedding(
                 file_id=file.id,
                 section_id=section.id,

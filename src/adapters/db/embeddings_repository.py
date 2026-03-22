@@ -10,6 +10,7 @@ Notes:
 - Uses a dedicated PostgreSQL engine from `pg_engine.get_pg_engine()`.
 - The table maintains only logical references to the SQLite entities (file_id, section_id).
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
@@ -19,7 +20,7 @@ from sqlalchemy import text
 from src.adapters.db.embeddings_models import EmbeddingChunk, SimilarChunk
 from src.adapters.db.pg_engine import get_pg_engine
 
-EMBEDDING_DIM = 768  # Updated for Gemini text-embedding-004 (API-based, no local resources)
+EMBEDDING_DIM = 3072  # Updated for Gemini gemini-embedding-001 (3072 default, supports MRL for 768/1536)
 TABLE_NAME = "document_chunks"
 
 
@@ -61,7 +62,9 @@ class EmbeddingsRepository:
     def delete_file_chunks(self, file_id: int) -> int:
         """Delete all chunks for a given file_id. Returns number of deleted rows."""
         with self.engine.begin() as conn:
-            res = conn.execute(text(f"DELETE FROM {TABLE_NAME} WHERE file_id = :fid"), {"fid": file_id})
+            res = conn.execute(
+                text(f"DELETE FROM {TABLE_NAME} WHERE file_id = :fid"), {"fid": file_id}
+            )
             return res.rowcount or 0
 
     def delete_chunks_by_file(self, file_id: int) -> int:
@@ -87,16 +90,20 @@ class EmbeddingsRepository:
         """
         rows = []
         for ch in chunks:
-            rows.append({
-                "file_id": ch.file_id,
-                "section_id": ch.section_id,
-                "chunk_index": ch.chunk_index,
-                "content": ch.content,
-                "embedding": list(ch.embedding),  # psycopg2 + pgvector accepts python lists
-                "page_number": ch.page_number,
-                "section_type": ch.section_type,
-                "file_name": ch.file_name,
-            })
+            rows.append(
+                {
+                    "file_id": ch.file_id,
+                    "section_id": ch.section_id,
+                    "chunk_index": ch.chunk_index,
+                    "content": ch.content,
+                    "embedding": list(
+                        ch.embedding
+                    ),  # psycopg2 + pgvector accepts python lists
+                    "page_number": ch.page_number,
+                    "section_type": ch.section_type,
+                    "file_name": ch.file_name,
+                }
+            )
         if not rows:
             return 0
         sql = text(
@@ -141,7 +148,9 @@ class EmbeddingsRepository:
         with self.engine.begin() as conn:
             res = conn.execute(sql, params)
             out: list[SimilarChunk] = []
-            for row in res.mappings():  # Usar mappings() para acceder por nombre de columna
+            for (
+                row
+            ) in res.mappings():  # Usar mappings() para acceder por nombre de columna
                 out.append(
                     SimilarChunk(
                         id=row["id"],
