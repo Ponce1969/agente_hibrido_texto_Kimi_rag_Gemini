@@ -4,8 +4,9 @@ Adaptador de Gemini Embeddings que implementa EmbeddingsPort.
 Este adaptador usa la API de Google Gemini para generar embeddings vectoriales,
 eliminando la necesidad de modelos locales y liberando recursos del sistema.
 
-Modelo: text-embedding-004 (768 dimensiones)
+Modelo: gemini-embedding-001 con MRL (768 dimensiones)
 Ventajas: Sin carga en CPU/RAM, mayor calidad, procesamiento en cloud
+         Compatible con pgvector HNSW (límite 2000 dims)
 """
 
 from __future__ import annotations
@@ -41,7 +42,9 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
     """
 
     EMBEDDING_MODEL = "gemini-embedding-001"
-    EMBEDDING_DIMENSION = 3072
+    EMBEDDING_DIMENSION = (
+        768  # Using MRL to output 768 dims (compatible with pgvector HNSW)
+    )
 
     def __init__(self, client: httpx.AsyncClient) -> None:
         """
@@ -86,10 +89,12 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
             f"{self.EMBEDDING_MODEL}:embedContent?key={self.api_key}"
         )
 
-        # Payload para la API
+        # Payload para la API con MRL (Matryoshka Representation Learning)
         payload = {
             "model": f"models/{self.EMBEDDING_MODEL}",
             "content": {"parts": [{"text": text}]},
+            "taskType": "RETRIEVAL_DOCUMENT",
+            "outputDimensionality": self.EMBEDDING_DIMENSION,  # MRL: reduce a 768 dims
         }
 
         # Llamar a la API
@@ -106,6 +111,14 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
 
         if not embedding_values:
             raise RuntimeError("Gemini no retornó embedding válido")
+
+        # Validar dimensión del vector (MRL safety check)
+        if len(embedding_values) != self.EMBEDDING_DIMENSION:
+            raise RuntimeError(
+                f"Dimensión de embedding inesperada: {len(embedding_values)} "
+                f"(esperado: {self.EMBEDDING_DIMENSION}). "
+                f"Verifica que MRL esté configurado correctamente."
+            )
 
         # Convertir a numpy array y normalizar
         embedding = np.array(embedding_values, dtype=np.float32)

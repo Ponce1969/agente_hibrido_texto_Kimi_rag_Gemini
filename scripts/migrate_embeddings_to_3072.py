@@ -1,14 +1,18 @@
 """
-Script de migración para actualizar la dimensión de embeddings de 768 a 3072.
+Script de verificación/migración para embeddings.
 
-Este script es necesario porque:
-- El modelo 'text-embedding-004' fue deprecado el 14 de enero de 2026
-- El nuevo modelo 'gemini-embedding-001' usa 3072 dimensiones
-- NO es posible alterar una columna vector en pgvector
-- Por lo tanto, hay que recrear la tabla y re-indexar los PDFs
+SITUACIÓN ACTUAL:
+- El modelo 'text-embedding-004' fue DEPRECADO el 14 de enero de 2026
+- El nuevo modelo 'gemini-embedding-001' usa MRL (Matryoshka Representation Learning)
+- Ambos usan 768 dimensiones - la tabla de PostgreSQL NO necesita recrearse
 
-Uso:
-    python scripts/migrate_embeddings_to_3072.py
+LO QUE HAY QUE HACER:
+1. ✅ Actualizar el código (ya hecho) - usar gemini-embedding-001 con MRL
+2. ✅ Reconstruir la imagen Docker
+3. ⚠️  Re-indexar los PDFs existentes (los embeddings antiguos son incompatibles)
+
+Los 668 embeddings existentes fueron creados con text-embedding-004 que ya no existe.
+Para que RAG funcione correctamente, hay que borrar y re-indexar los PDFs.
 """
 
 import sys
@@ -16,143 +20,106 @@ import os
 import logging
 from pathlib import Path
 
-# Agregar el directorio raíz al path para poder importar src
-_root_dir = Path(__file__).parent.parent
-if str(_root_dir) not in sys.path:
-    sys.path.insert(0, str(_root_dir))
-
-from sqlalchemy import create_engine, text
-
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-OLD_DIM = 768
-NEW_DIM = 3072
-TABLE_NAME = "document_chunks"
 
+def main():
+    logger.info("")
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info("🔄 VERIFICACIÓN DE MIGRACIÓN DE EMBEDDINGS")
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info("")
 
-def migrate():
-    """Migra la tabla de embeddings a la nueva dimensión."""
+    # Verificar que podemos importar las dependencias
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
 
-    # Solicitar la URL de la base de datos
-    db_url = input(
-        f"\n"
-        f"🔄 MIGRAR EMBEDDINGS DE {OLD_DIM} A {NEW_DIM} DIMENSIONES\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"\n"
-        f"Ingresa la URL de PostgreSQL (o presiona Enter para usar DATABASE_URL_PG del .env):\n"
-        f"> "
-    ).strip()
-
-    if not db_url:
+        # Intentar conectar a PostgreSQL para verificar
+        from sqlalchemy import create_engine, text
         from src.adapters.config.settings import settings
 
         db_url = settings.database_url_pg
-
-    if not db_url:
-        logger.error("❌ No se proporcionó URL de base de datos")
-        sys.exit(1)
-
-    # Conectar a la base de datos
-    logger.info(f"🔌 Conectando a PostgreSQL...")
-    engine = create_engine(db_url)
-
-    with engine.connect() as conn:
-        # 1. Verificar que la extensión vector existe
-        logger.info("📋 Verificando extensión vector...")
-        result = conn.execute(
-            text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-        )
-        if not result.fetchone():
-            logger.error("❌ La extensión 'vector' no está instalada")
+        if not db_url:
+            logger.error("❌ DATABASE_URL_PG no está configurada en .env")
             sys.exit(1)
-        logger.info("✅ Extensión vector instalada")
 
-        # 2. Verificar si la tabla existe
-        logger.info(f"📋 Verificando tabla '{TABLE_NAME}'...")
-        result = conn.execute(
-            text(f"""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = '{TABLE_NAME}'
+        logger.info(f"🔌 Verificando conexión a PostgreSQL...")
+        engine = create_engine(db_url)
+
+        with engine.connect() as conn:
+            # Verificar extensión vector
+            result = conn.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
             )
-        """)
-        )
-        table_exists = result.fetchone()[0]
+            if not result.fetchone():
+                logger.error("❌ Extensión 'vector' no está instalada")
+                sys.exit(1)
+            logger.info("✅ Extensión vector instalada")
 
-        if table_exists:
-            # 3. Contar embeddings existentes
-            result = conn.execute(text(f"SELECT COUNT(*) FROM {TABLE_NAME}"))
-            count = result.fetchone()[0]
-            logger.info(f"📊 Tabla '{TABLE_NAME}' existe con {count} embeddings")
+            # Verificar tabla
+            result = conn.execute(
+                text("""
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_name = 'document_chunks' AND column_name = 'embedding'
+            """)
+            )
+            col = result.fetchone()
 
-            if count > 0:
-                # 4. Solicitar confirmación
-                logger.warning(
-                    f"⚠️  ATENCIÓN: Se eliminarán {count} embeddings existentes"
-                )
-                confirm = input(
-                    "❓ ¿Estás seguro? Escribe 'SI' para continuar: "
-                ).strip()
+            if col:
+                logger.info(f"📊 Tabla 'document_chunks' existe")
 
-                if confirm != "SI":
-                    logger.info("❌ Migración cancelada por el usuario")
-                    sys.exit(0)
+                # Contar embeddings
+                result = conn.execute(text("SELECT COUNT(*) FROM document_chunks"))
+                count = result.fetchone()[0]
+                logger.info(f"📊 Embeddings existentes: {count}")
 
-                # 5. Eliminar tabla antigua
-                logger.info(f"🗑️  Eliminando tabla '{TABLE_NAME}'...")
-                conn.execute(text(f"DROP TABLE IF EXISTS {TABLE_NAME} CASCADE"))
-                conn.commit()
-                logger.info(f"✅ Tabla '{TABLE_NAME}' eliminada")
+                if count > 0:
+                    logger.warning("")
+                    logger.warning("⚠️  ATENCIÓN:")
+                    logger.warning(
+                        f"   Tienes {count} embeddings creados con text-embedding-004"
+                    )
+                    logger.warning(
+                        "   Ese modelo YA NO EXISTE (deprecated el 14/ene/2026)"
+                    )
+                    logger.warning("")
+                    logger.warning("   OPCIONES:")
+                    logger.warning(
+                        "   1. Mantener los embeddings (búsquedas pueden ser imprecisas)"
+                    )
+                    logger.warning(
+                        "   2. Re-indexar los PDFs (recomendado para precisión)"
+                    )
+                    logger.warning("")
             else:
-                # Tabla vacía, solo eliminarla
-                logger.info(f"🗑️  Eliminando tabla '{TABLE_NAME}' vacía...")
-                conn.execute(text(f"DROP TABLE IF EXISTS {TABLE_NAME} CASCADE"))
-                conn.commit()
-        else:
-            logger.info(f"📊 Tabla '{TABLE_NAME}' no existe (primera vez)")
+                logger.info("📊 Tabla 'document_chunks' no existe todavía")
+                logger.info("   Se creará automáticamente cuando indexes el primer PDF")
 
-        # 6. Crear nueva tabla con dimensión 3072
-        logger.info(f"🆕 Creando tabla '{TABLE_NAME}' con dimensión {NEW_DIM}...")
-        ddl = f"""
-        CREATE TABLE {TABLE_NAME} (
-            id BIGSERIAL PRIMARY KEY,
-            file_id INTEGER NOT NULL,
-            section_id INTEGER,
-            chunk_index INTEGER NOT NULL,
-            content TEXT NOT NULL,
-            embedding vector({NEW_DIM}) NOT NULL,
-            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
-            page_number INTEGER,
-            section_type VARCHAR(100),
-            file_name VARCHAR(500)
-        );
-        CREATE INDEX idx_{TABLE_NAME}_file_id ON {TABLE_NAME}(file_id);
-        CREATE INDEX idx_{TABLE_NAME}_section_id ON {TABLE_NAME}(section_id);
-        CREATE INDEX idx_{TABLE_NAME}_embedding ON {TABLE_NAME} USING hnsw (embedding vector_cosine_ops);
-        CREATE INDEX idx_{TABLE_NAME}_page_number ON {TABLE_NAME}(page_number);
-        CREATE INDEX idx_{TABLE_NAME}_section_type ON {TABLE_NAME}(section_type);
-        """
-        conn.execute(text(ddl))
-        conn.commit()
-        logger.info(f"✅ Tabla '{TABLE_NAME}' creada con dimensión {NEW_DIM}")
+        engine.dispose()
 
-    logger.info("")
-    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    logger.info("✅ MIGRACIÓN COMPLETADA")
-    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    logger.info("")
-    logger.info("📝 SIGUIENTES PASOS:")
-    logger.info("   1. Actualiza el código en git (si es necesario)")
-    logger.info("   2. Reconstruye y reinicia los contenedores Docker")
-    logger.info("   3. Ve a la aplicación y re-indexa cada PDF")
-    logger.info("      (borra el PDF y súbelo de nuevo, o usa el botón de indexar)")
-    logger.info("")
+        logger.info("")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info("✅ VERIFICACIÓN COMPLETADA")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info("")
+        logger.info("📝 SIGUIENTES PASOS:")
+        logger.info("   1. Actualiza el código: git pull")
+        logger.info("   2. Reconstruye Docker: docker compose build backend --no-cache")
+        logger.info("   3. Reinicia: docker compose up -d backend")
+        logger.info("   4. Ve a la app y RE-INDEXA tus PDFs (borrar y subir de nuevo)")
+        logger.info("")
 
-    engine.dispose()
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    migrate()
+    main()

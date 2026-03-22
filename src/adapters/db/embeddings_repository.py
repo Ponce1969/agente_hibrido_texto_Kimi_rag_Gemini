@@ -20,7 +20,9 @@ from sqlalchemy import text
 from src.adapters.db.embeddings_models import EmbeddingChunk, SimilarChunk
 from src.adapters.db.pg_engine import get_pg_engine
 
-EMBEDDING_DIM = 3072  # Updated for Gemini gemini-embedding-001 (3072 default, supports MRL for 768/1536)
+EMBEDDING_DIM = (
+    768  # Gemini gemini-embedding-001 with MRL output at 768 dims (HNSW max is 2000)
+)
 TABLE_NAME = "document_chunks"
 
 
@@ -90,15 +92,22 @@ class EmbeddingsRepository:
         """
         rows = []
         for ch in chunks:
+            embedding_list = list(ch.embedding)
+
+            # Validar dimensión del vector antes de insertar
+            if len(embedding_list) != EMBEDDING_DIM:
+                raise ValueError(
+                    f"Dimensión de embedding inválida: {len(embedding_list)} "
+                    f"(esperado: {EMBEDDING_DIM})"
+                )
+
             rows.append(
                 {
                     "file_id": ch.file_id,
                     "section_id": ch.section_id,
                     "chunk_index": ch.chunk_index,
                     "content": ch.content,
-                    "embedding": list(
-                        ch.embedding
-                    ),  # psycopg2 + pgvector accepts python lists
+                    "embedding": embedding_list,
                     "page_number": ch.page_number,
                     "section_type": ch.section_type,
                     "file_name": ch.file_name,
@@ -122,13 +131,22 @@ class EmbeddingsRepository:
         file_id: int | None = None,
         top_k: int = 10,
     ) -> list[SimilarChunk]:
-        """Return top-k most similar chunks using cosine distance (<->).
+        """Return top-k most similar chunks using cosine distance (<=>).
         If file_id is provided, the search is filtered to that file.
 
-        Default top_k aumentado de 5 a 10 para mejor cobertura de contexto.
+        IMPORTANTE: Usar <=> (coseno) para que match con el índice HNSW
+        creado con vector_cosine_ops. Usar <-> (L2) ignoraría el índice.
         """
+        # Validar dimensión de la query
+        query_list = list(query_embedding)
+        if len(query_list) != EMBEDDING_DIM:
+            raise ValueError(
+                f"Dimensión de query_embedding inválida: {len(query_list)} "
+                f"(esperado: {EMBEDDING_DIM})"
+            )
+
         # Convertir el embedding a string de array de PostgreSQL
-        embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+        embedding_str = "[" + ",".join(str(x) for x in query_list) + "]"
         params = {"k": top_k}
         filter_sql = "WHERE file_id = :fid" if file_id is not None else ""
         if file_id is not None:
@@ -137,11 +155,11 @@ class EmbeddingsRepository:
         sql = text(
             f"""
             SELECT id, file_id, section_id, chunk_index, content,
-                   (embedding <-> '{embedding_str}'::vector) AS distance,
+                   (embedding <=> '{embedding_str}'::vector) AS distance,
                    page_number, section_type, file_name
             FROM {TABLE_NAME}
             {filter_sql}
-            ORDER BY embedding <-> '{embedding_str}'::vector
+            ORDER BY embedding <=> '{embedding_str}'::vector
             LIMIT :k
             """
         )
