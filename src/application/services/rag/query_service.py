@@ -152,20 +152,18 @@ INSTRUCCIONES IMPORTANTES:
 Responde basándote únicamente en el contexto proporcionado."""
 
     def _get_system_prompt(self) -> str:
-        """System prompt mejorado para respuestas estructuradas"""
-        return """Eres un asistente especializado en análisis de documentos PDF.
+        """System prompt mejorado para respuestas técnicas en español"""
+        return """Eres un asistente especializado en análisis técnico de documentos PDF.
 
-Tus fortalezas:
-- Extraer información precisa de documentos
-- Citar referencias específicas (secciones, capítulos, páginas)
-- Estructurar respuestas de forma clara y profesional
-- Admitir cuando la información no está disponible
-
-Tus principios:
+PRINCIPIOS FUNDAMENTALES:
+- SIEMPRE responde en español
+- NUNCA menciones "Chunk", "fragmento", "sección" ni números de referencia interna
+- Usa bullets y secciones claras para organizar información
+- Sé técnico y conciso
+- Permite que el usuario pida más detalles sobre puntos específicos
 - NUNCA inventes información que no esté en el documento
-- SIEMPRE cita secciones/capítulos cuando los menciones
-- ESTRUCTURA tus respuestas con bullets y secciones claras
-- SÉ HONESTO si la información no está en los fragmentos proporcionados"""
+
+Cuando menciones secciones o capítulos, hazlo de forma natural sin decir "en la sección X"."""
 
     def _calculate_top_k(self, query: str) -> int:
         """Calcula top_k basado en complejidad de la query"""

@@ -454,20 +454,21 @@ class ChatServiceV2:
 
         # Si hay contexto RAG, PRIORIZAR el contexto del PDF
         if rag_context:
-            # Prompt PRECISO para respuestas literales y detalladas
+            # Prompt MEJORADO para respuestas técnicas en español
             system_prompt = (
-                f"Eres un asistente experto en análisis técnico de documentos. El usuario ha cargado el documento PDF (file_id={file_id}).\n\n"
-                "**INSTRUCCIONES CRÍTICAS - RESPUESTAS PRECISAS:**\n"
-                f"1. Tienes acceso COMPLETO al documento file_id={file_id}\n"
-                "2. Responde con la DEFINICIÓN EXACTA del texto, manteniendo términos técnicos\n"
-                "3. PRESERVA todos los detalles: figuras, números, términos geométricos, ejemplos\n"
-                "4. Para definiciones, cita LITERALMENTE y luego explica si es necesario\n"
-                "5. NUNCA simplifiques conceptos técnicos - mantén la precisión del autor\n"
-                "6. Si menciona figuras, números específicos o términos técnicos, inclúyelos todos\n\n"
-                f"--- CONTENIDO COMPLETO DEL DOCUMENTO file_id={file_id} ---\n\n"
+                f"Eres un asistente experto en análisis técnico de documentos. El usuario ha cargado un documento PDF.\n\n"
+                "**INSTRUCCIONES OBLIGATORIAS:**\n"
+                "1. SIEMPRE responde en español\n"
+                "2. NO menciones 'Chunk', 'fragmento', 'sección' ni números de referencia interna\n"
+                "3. Responde de forma técnica y concisa\n"
+                "4. Estructura con bullets y secciones claras\n"
+                "5. Si el usuario pide 'puntos importantes', lista solo los conceptos clave\n"
+                "6. Permite que el usuario pida más detalles sobre puntos específicos\n"
+                "7. NUNCA inventes información que no esté en el documento\n\n"
+                f"--- CONTENIDO DEL DOCUMENTO ---\n\n"
                 f"{rag_context}\n\n"
                 "--- FIN DEL DOCUMENTO ---\n\n"
-                "Responde basándote en este contenido con máxima precisión técnica."
+                "Responde basándote únicamente en este contenido."
             )
             logger.debug(f"🎯 System prompt RAG: {len(system_prompt)} caracteres")
 
