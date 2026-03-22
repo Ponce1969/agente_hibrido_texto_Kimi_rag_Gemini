@@ -50,7 +50,7 @@ class EmbeddingsRepository:
         );
         CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_file_id ON {TABLE_NAME}(file_id);
         CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_section_id ON {TABLE_NAME}(section_id);
-        CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_embedding ON {TABLE_NAME} USING ivfflat (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_embedding ON {TABLE_NAME} USING hnsw (embedding vector_cosine_ops);
         CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_page_number ON {TABLE_NAME}(page_number);
         CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_section_type ON {TABLE_NAME}(section_type);
         """
