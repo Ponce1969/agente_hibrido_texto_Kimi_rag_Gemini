@@ -6,6 +6,7 @@ Responsabilidades:
 2. Construcción de prompt RAG
 3. Integración con embeddings_repository
 """
+
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,15 +16,14 @@ from src.domain.models import ChatMessage, MessageRole
 
 
 class RagQueryService:
-    def __init__(self, embeddings_repository: EmbeddingsRepository, gemini_adapter: GeminiAdapter) -> None:
+    def __init__(
+        self, embeddings_repository: EmbeddingsRepository, gemini_adapter: GeminiAdapter
+    ) -> None:
         self.embeddings_repo = embeddings_repository
         self.gemini = gemini_adapter
 
     async def query_rag(
-        self,
-        query: str,
-        file_id: int | None = None,
-        session_id: str | None = None
+        self, query: str, file_id: int | None = None, session_id: str | None = None
     ) -> str:
         """Ejecuta query RAG con opción de filtro por file_id"""
         # 1. Obtener embedding de la query
@@ -33,14 +33,16 @@ class RagQueryService:
         chunks = self.embeddings_repo.search_top_k(
             query_embedding=query_embedding,
             file_id=file_id,
-            top_k=self._calculate_top_k(query)
+            top_k=self._calculate_top_k(query),
         )
 
         if not chunks:
             return "No encontré información relevante en los documentos."
 
         # 3. Construir contexto RAG con optimización de tokens
-        rag_context = self._build_rag_context_optimized(chunks, file_id, max_context_tokens=6000)
+        rag_context = self._build_rag_context_optimized(
+            chunks, file_id, max_context_tokens=6000
+        )
 
         # 4. Construir prompt
         prompt = self._build_rag_prompt(query, rag_context)
@@ -51,13 +53,13 @@ class RagQueryService:
             role=MessageRole.USER,
             content=prompt,
             timestamp=datetime.now(UTC),
-            message_index=0
+            message_index=0,
         )
         response, _ = await self.gemini.get_chat_completion(
             system_prompt=self._get_system_prompt(),
             messages=[user_message],
-            max_tokens=4096,  # Aumentado para respuestas más completas
-            temperature=0.3
+            max_tokens=8192,  # Máximo para respuestas completas
+            temperature=0.3,
         )
 
         return response
@@ -82,21 +84,21 @@ class RagQueryService:
         for i, chunk in enumerate(chunks, 1):
             # Incluir metadata si está disponible
             metadata_info = ""
-            if hasattr(chunk, 'metadata') and chunk.metadata:
+            if hasattr(chunk, "metadata") and chunk.metadata:
                 # Extraer información de sección/capítulo si existe
-                section = chunk.metadata.get('section', '')
-                page = chunk.metadata.get('page_number', '')
+                section = chunk.metadata.get("section", "")
+                page = chunk.metadata.get("page_number", "")
                 if section:
                     metadata_info = f" (Sección: {section})"
                 elif page:
                     metadata_info = f" (Página: {page})"
 
-            context_parts.append(
-                f"[Fragmento {i}{metadata_info}]\n{chunk.content}\n"
-            )
+            context_parts.append(f"[Fragmento {i}{metadata_info}]\n{chunk.content}\n")
         return "\n".join(context_parts)
 
-    def _build_rag_context_optimized(self, chunks: list[Any], file_id: int | None, max_context_tokens: int = 6000) -> str:
+    def _build_rag_context_optimized(
+        self, chunks: list[Any], file_id: int | None, max_context_tokens: int = 6000
+    ) -> str:
         """Construye el contexto RAG optimizado para no exceder límite de tokens"""
         context_parts = []
         estimated_tokens = 0
@@ -111,17 +113,15 @@ class RagQueryService:
 
             # Incluir metadata si está disponible
             metadata_info = ""
-            if hasattr(chunk, 'metadata') and chunk.metadata:
-                section = chunk.metadata.get('section', '')
-                page = chunk.metadata.get('page_number', '')
+            if hasattr(chunk, "metadata") and chunk.metadata:
+                section = chunk.metadata.get("section", "")
+                page = chunk.metadata.get("page_number", "")
                 if section:
                     metadata_info = f" (Sección: {section})"
                 elif page:
                     metadata_info = f" (Página: {page})"
 
-            context_parts.append(
-                f"[Fragmento {i}{metadata_info}]\n{chunk.content}\n"
-            )
+            context_parts.append(f"[Fragmento {i}{metadata_info}]\n{chunk.content}\n")
             estimated_tokens += chunk_tokens
 
         return "\n".join(context_parts)
@@ -176,7 +176,17 @@ Tus principios:
             return 5
 
         # Preguntas que requieren contexto amplio (reducido para evitar overflow)
-        if any(word in query_lower for word in ["explica", "cómo funciona", "diferencia", "compara", "principales", "cuáles son"]):
+        if any(
+            word in query_lower
+            for word in [
+                "explica",
+                "cómo funciona",
+                "diferencia",
+                "compara",
+                "principales",
+                "cuáles son",
+            ]
+        ):
             return 12  # Reducido de 15 a 12
 
         # Preguntas sobre conceptos específicos

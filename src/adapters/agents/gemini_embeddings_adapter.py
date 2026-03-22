@@ -73,8 +73,8 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         self,
         text: str,
         *,
-        max_retries: int = 5,
-        base_delay: float = 2.0,
+        max_retries: int = 15,  # Aumentado para rate limits agresivos
+        base_delay: float = 5.0,  # Delay base mayor
     ) -> EmbeddingVector:
         """
         Genera un embedding vectorial usando Gemini API con retry automático.
@@ -125,8 +125,13 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
                 # Manejar errores HTTP específicos
                 if response.status_code == 429:
                     # Rate limit - esperar y reintentar
-                    retry_after = int(
-                        response.headers.get("retry-after", base_delay * (2**attempt))
+                    retry_after = min(
+                        int(
+                            response.headers.get(
+                                "retry-after", base_delay * (2**attempt)
+                            )
+                        ),
+                        60,  # Máximo 60 segundos
                     )
                     logger.warning(
                         f"⚠️ Rate limit (429) - intento {attempt + 1}/{max_retries}. "
@@ -137,7 +142,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
 
                 elif response.status_code >= 500:
                     # Error del servidor - esperar y reintentar
-                    delay = base_delay * (2**attempt)
+                    delay = min(base_delay * (2**attempt), 60.0)  # Máximo 60s
                     logger.warning(
                         f"⚠️ Error del servidor ({response.status_code}) - "
                         f"intento {attempt + 1}/{max_retries}. "
@@ -221,17 +226,17 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         self,
         texts: list[str],
         *,
-        batch_size: int = 5,  # Reducido de 32 a 5 para evitar rate limit
+        batch_size: int = 2,  # Reducido a 2 para evitar rate limit agresivo
     ) -> list[EmbeddingVector]:
         """
         Genera embeddings para múltiples textos en batch.
 
-        Nota: Usa batch_size pequeño para evitar rate limit de Gemini.
+        Nota: Usa batch_size muy pequeño para evitar rate limit de Gemini.
         Cada batch tiene delays para respetar los límites de la API.
 
         Args:
             texts: Lista de textos a procesar
-            batch_size: Tamaño del batch (default: 5 para evitar rate limit)
+            batch_size: Tamaño del batch (default: 2 para evitar rate limit)
 
         Returns:
             Lista de vectores de embedding
@@ -261,7 +266,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
 
             # Delay entre batches para evitar rate limit
             if i + batch_size < len(texts):
-                delay = 1.5  # 1.5 segundos entre batches
+                delay = 3.0  # 3 segundos entre batches para ser más conservador
                 logger.debug(f"⏳ Esperando {delay}s entre batches...")
                 await asyncio.sleep(delay)
 

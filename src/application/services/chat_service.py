@@ -87,6 +87,7 @@ class ChatServiceV2:
             from src.adapters.repositories.metrics_repository import (
                 SQLModelMetricsRepository,
             )
+
             self.metrics = MetricsService(repository=SQLModelMetricsRepository())
         else:
             self.metrics = metrics_service
@@ -134,7 +135,7 @@ class ChatServiceV2:
         """Crea una nueva sesión para un usuario con un título por defecto."""
         session_data = ChatSessionCreate(
             user_id=user_id,
-            title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+            title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
         )
         return self.create_session(session_data)
 
@@ -158,7 +159,7 @@ class ChatServiceV2:
                 {
                     "id": int(s.id),
                     "user_id": s.user_id,
-                    "session_name": s.title if hasattr(s, 'title') else None,
+                    "session_name": s.title if hasattr(s, "title") else None,
                     "message_count": message_count,
                     "created_at": s.created_at.isoformat() if s.created_at else None,
                     "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -166,12 +167,8 @@ class ChatServiceV2:
             )
         return detailed_sessions
 
-
     def _resolve_target_file_id(
-        self,
-        session_id: str,
-        user_message: str,
-        provided_file_id: int | None
+        self, session_id: str, user_message: str, provided_file_id: int | None
     ) -> int | None:
         """
         Resuelve qué archivo usar como contexto para RAG.
@@ -183,9 +180,13 @@ class ChatServiceV2:
         """
         # 1. Buscar mención explícita "ID:X" en el mensaje
         if self.document_mapper:
-            explicit_id = self.document_mapper.parse_document_reference_from_text(user_message)
+            explicit_id = self.document_mapper.parse_document_reference_from_text(
+                user_message
+            )
             if explicit_id:
-                logger.info(f"📄 Detectada referencia explícita a archivo ID:{explicit_id}")
+                logger.info(
+                    f"📄 Detectada referencia explícita a archivo ID:{explicit_id}"
+                )
                 return explicit_id
 
         # 2. Usar ID proporcionado por UI (si existe)
@@ -193,10 +194,15 @@ class ChatServiceV2:
             return provided_file_id
 
         # 3. Verificar referencia contextual ("este pdf")
-        if self.context_service and self.context_service.is_referencing_current_document(user_message):
+        if (
+            self.context_service
+            and self.context_service.is_referencing_current_document(user_message)
+        ):
             context_id = self.context_service.get_current_file_id(session_id)
             if context_id:
-                logger.info(f"📄 Detectada referencia contextual a archivo ID:{context_id}")
+                logger.info(
+                    f"📄 Detectada referencia contextual a archivo ID:{context_id}"
+                )
                 return context_id
 
         return None
@@ -237,7 +243,9 @@ class ChatServiceV2:
 
         # --- RESOLUCIÓN DE CONTEXTO RAG ---
         # Determinar el file_id real a usar
-        resolved_file_id = self._resolve_target_file_id(session_id, user_message, file_id)
+        resolved_file_id = self._resolve_target_file_id(
+            session_id, user_message, file_id
+        )
 
         # Si se resolvió un archivo, actualizar el contexto de la sesión
         if resolved_file_id:
@@ -256,7 +264,7 @@ class ChatServiceV2:
             # Crear nueva sesión si no existe
             session_data = ChatSessionCreate(
                 user_id="streamlit_user",
-                title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+                title=f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
             )
             new_session = self.repo.create_session(session_data)
             session_id = str(new_session.id)
@@ -286,36 +294,89 @@ class ChatServiceV2:
                 from src.adapters.config.settings import settings
 
                 question_length = len(user_message)
-                is_complex = any(word in user_message.lower() for word in [
-                    # Análisis y comparación
-                    'compara', 'diferencia', 'diferencias', 'relación', 'relaciona',
-                    'contrasta', 'versus', 'vs', 'frente a', 'comparación',
-                    # Explicación profunda
-                    'explica detalladamente', 'explica en detalle', 'profundiza',
-                    'desarrolla', 'elabora', 'detalla', 'describe en profundidad',
-                    'extiende', 'amplía', 'expande',
-                    # Análisis técnico
-                    'analiza', 'evalúa', 'examina', 'investiga', 'estudia',
-                    'revisa', 'inspecciona', 'diagnostica',
-                    # Enumeración y listado
-                    'enumera', 'lista', 'identifica', 'menciona todos',
-                    'cuáles son', 'qué tipos', 'qué clases',
-                    # Síntesis y conexión
-                    'sintetiza', 'resume extensamente', 'conecta', 'vincula',
-                    'integra', 'unifica', 'combina',
-                    # Ejemplos y casos
-                    'ejemplos', 'ejemplo práctico', 'casos de uso', 'casos prácticos',
-                    'demuestra', 'ilustra', 'muestra cómo',
-                    # Procedimientos y pasos
-                    'paso a paso', 'procedimiento', 'proceso completo', 'cómo hacer',
-                    'implementar', 'aplicar en la práctica',
-                    # Conceptos avanzados
-                    'ventajas y desventajas', 'pros y contras', 'beneficios y limitaciones',
-                    'implicaciones', 'consecuencias', 'impacto',
-                    # Contexto técnico (SQL, programación)
-                    'optimización', 'rendimiento', 'mejor práctica', 'mejores prácticas',
-                    'arquitectura', 'diseño', 'patrones', 'estrategias'
-                ])
+                is_complex = any(
+                    word in user_message.lower()
+                    for word in [
+                        # Análisis y comparación
+                        "compara",
+                        "diferencia",
+                        "diferencias",
+                        "relación",
+                        "relaciona",
+                        "contrasta",
+                        "versus",
+                        "vs",
+                        "frente a",
+                        "comparación",
+                        # Explicación profunda
+                        "explica detalladamente",
+                        "explica en detalle",
+                        "profundiza",
+                        "desarrolla",
+                        "elabora",
+                        "detalla",
+                        "describe en profundidad",
+                        "extiende",
+                        "amplía",
+                        "expande",
+                        # Análisis técnico
+                        "analiza",
+                        "evalúa",
+                        "examina",
+                        "investiga",
+                        "estudia",
+                        "revisa",
+                        "inspecciona",
+                        "diagnostica",
+                        # Enumeración y listado
+                        "enumera",
+                        "lista",
+                        "identifica",
+                        "menciona todos",
+                        "cuáles son",
+                        "qué tipos",
+                        "qué clases",
+                        # Síntesis y conexión
+                        "sintetiza",
+                        "resume extensamente",
+                        "conecta",
+                        "vincula",
+                        "integra",
+                        "unifica",
+                        "combina",
+                        # Ejemplos y casos
+                        "ejemplos",
+                        "ejemplo práctico",
+                        "casos de uso",
+                        "casos prácticos",
+                        "demuestra",
+                        "ilustra",
+                        "muestra cómo",
+                        # Procedimientos y pasos
+                        "paso a paso",
+                        "procedimiento",
+                        "proceso completo",
+                        "cómo hacer",
+                        "implementar",
+                        "aplicar en la práctica",
+                        # Conceptos avanzados
+                        "ventajas y desventajas",
+                        "pros y contras",
+                        "beneficios y limitaciones",
+                        "implicaciones",
+                        "consecuencias",
+                        "impacto",
+                        # Contexto técnico (SQL, programación)
+                        "optimización",
+                        "rendimiento",
+                        "mejor práctica",
+                        "mejores prácticas",
+                        "arquitectura",
+                        "diseño",
+                        "patrones",
+                        "estrategias",
+                    ]
+                )
 
                 # Ajustar top_k dinámicamente usando configuración
                 if is_complex or question_length > 100:
@@ -331,7 +392,9 @@ class ChatServiceV2:
                     limit = settings.rag_simple_limit
                     complexity = "simple"
 
-                logger.info(f"🎯 Búsqueda adaptativa ({complexity}): top_k={top_k}, limit={limit} chars")
+                logger.info(
+                    f"🎯 Búsqueda adaptativa ({complexity}): top_k={top_k}, limit={limit} chars"
+                )
 
                 # Buscar chunks relevantes
                 # Búsqueda más precisa para definiciones técnicas
@@ -343,7 +406,9 @@ class ChatServiceV2:
                 )
 
                 if results:
-                    logger.info(f"✅ RAG: {len(results)} chunks encontrados para file_id={file_id}")
+                    logger.info(
+                        f"✅ RAG: {len(results)} chunks encontrados para file_id={file_id}"
+                    )
                     acc = 0
                     parts: list[str] = []
 
@@ -353,25 +418,33 @@ class ChatServiceV2:
                             break
 
                         # EmbeddingsServiceV2 retorna 'text', no 'content'
-                        content = r.get('text', '')
-                        chunk_idx = r.get('chunk_index', 0)
-                        similarity = r.get('similarity', 0.0)
+                        content = r.get("text", "")
+                        chunk_idx = r.get("chunk_index", 0)
+                        similarity = r.get("similarity", 0.0)
 
                         if not content:
-                            logger.warning(f"⚠️ Chunk {chunk_idx} sin contenido: {r.keys()}")
+                            logger.warning(
+                                f"⚠️ Chunk {chunk_idx} sin contenido: {r.keys()}"
+                            )
                             continue
 
                         snippet = content[:remaining]
-                        parts.append(f"[chunk {chunk_idx}, score={similarity:.3f}]\n{snippet}")
+                        parts.append(
+                            f"[chunk {chunk_idx}, score={similarity:.3f}]\n{snippet}"
+                        )
                         acc += len(snippet)
 
                     rag_context = "\n\n".join(parts)
                     rag_chunks_count = len(parts)  # Guardar para métricas
                     model_used = "gemini-2.5-flash"  # RAG usa Gemini
-                    logger.info(f"📄 Contexto RAG: {acc} caracteres de {rag_chunks_count} chunks")
+                    logger.info(
+                        f"📄 Contexto RAG: {acc} caracteres de {rag_chunks_count} chunks"
+                    )
                     logger.debug(f"🔍 Preview contexto: {rag_context[:300]}...")
                 else:
-                    logger.warning(f"⚠️ RAG: No se encontraron chunks para file_id={file_id}")
+                    logger.warning(
+                        f"⚠️ RAG: No se encontraron chunks para file_id={file_id}"
+                    )
             except Exception as e:
                 logger.error(f"❌ Error en búsqueda RAG: {e}")
                 logger.error(traceback.format_exc())
@@ -424,7 +497,9 @@ class ChatServiceV2:
                     self.last_search_sources = sources
                     context = self._build_internet_context(sources)
 
-                    logger.info(f"📚 Contexto web construido: {len(context)} caracteres de {len(sources)} fuentes")
+                    logger.info(
+                        f"📚 Contexto web construido: {len(context)} caracteres de {len(sources)} fuentes"
+                    )
 
                     # Re-llamar al LLM con contexto adicional
                     # IMPORTANTE: Incluir el contexto DENTRO del system prompt para que Kimi lo vea como conocimiento base
@@ -452,7 +527,9 @@ class ChatServiceV2:
                         use_fallback_on_error=use_fallback_on_error,
                         has_rag=bool(rag_context),
                     )
-                    logger.info(f"✅ Respuesta con contexto web generada: {len(response)} caracteres")
+                    logger.info(
+                        f"✅ Respuesta con contexto web generada: {len(response)} caracteres"
+                    )
                 else:
                     response = initial_response
             else:
@@ -477,8 +554,8 @@ class ChatServiceV2:
 
             if isinstance(tokens, dict):
                 # Formato diccionario (algunos LLMs)
-                prompt_tokens = tokens.get('prompt_tokens', 0)
-                completion_tokens = tokens.get('completion_tokens', 0)
+                prompt_tokens = tokens.get("prompt_tokens", 0)
+                completion_tokens = tokens.get("completion_tokens", 0)
             elif isinstance(tokens, int):
                 # Formato entero (Groq retorna total)
                 # Estimar: ~70% completion, 30% prompt
@@ -488,7 +565,9 @@ class ChatServiceV2:
                 # Gemini no retorna tokens, estimar basado en longitud
                 prompt_tokens = len(user_message) // 4  # ~4 chars por token
                 completion_tokens = len(response) // 4
-                logger.debug(f"⚠️ Tokens estimados (LLM no los proporciona): {prompt_tokens + completion_tokens}")
+                logger.debug(
+                    f"⚠️ Tokens estimados (LLM no los proporciona): {prompt_tokens + completion_tokens}"
+                )
             else:
                 # Caso inesperado, estimar
                 prompt_tokens = len(user_message) // 4
@@ -506,9 +585,11 @@ class ChatServiceV2:
                 rag_chunks_used=rag_chunks_count,
                 file_id=str(file_id) if file_id else None,
                 used_bear_search=used_bear,
-                bear_sources_count=bear_sources_count
+                bear_sources_count=bear_sources_count,
             )
-            logger.info(f"📊 Métricas registradas: {prompt_tokens + completion_tokens} tokens, {response_time:.2f}s, modelo={model_used}")
+            logger.info(
+                f"📊 Métricas registradas: {prompt_tokens + completion_tokens} tokens, {response_time:.2f}s, modelo={model_used}"
+            )
         except Exception as e:
             logger.error(f"❌ Error registrando métricas: {e}")
             logger.error(traceback.format_exc())
@@ -542,7 +623,7 @@ class ChatServiceV2:
             "- Librerías sin soporte estable o releases muy recientes\n"
             "- Eventos/noticias/releases posteriores a enero 2025\n"
             "- Preguntas sobre clima, noticias, información en tiempo real\n\n"
-            "ENTONCES responde: \"Voy a buscar información actualizada sobre esto.\"\n\n"
+            'ENTONCES responde: "Voy a buscar información actualizada sobre esto."\n\n'
             "**IMPORTANTE:** Prioriza siempre respuestas técnicas de alta calidad. "
             "Usa búsqueda web solo cuando sea estrictamente necesario para información actualizada."
         )
@@ -555,7 +636,9 @@ class ChatServiceV2:
             return base_prompt + knowledge_cutoff
         except (KeyError, ValueError) as e:
             # Fallback: usar prompt por defecto del arquitecto
-            logger.warning(f"⚠️ No se encontró prompt para modo '{agent_mode}', usando Arquitecto por defecto. Error: {e}")
+            logger.warning(
+                f"⚠️ No se encontró prompt para modo '{agent_mode}', usando Arquitecto por defecto. Error: {e}"
+            )
             base_prompt = get_system_prompt(AgentMode.PYTHON_ARCHITECT)
             return base_prompt + knowledge_cutoff
 
@@ -597,7 +680,11 @@ class ChatServiceV2:
 
         # Si el usuario menciona GitHub, búsqueda o internet
         bool(
-            re.search(r"\b(github|buscar|internet|repo|repositorio)\b", user_message, re.IGNORECASE)
+            re.search(
+                r"\b(github|buscar|internet|repo|repositorio)\b",
+                user_message,
+                re.IGNORECASE,
+            )
         )
 
         # Si el usuario menciona un traceback o error específico
@@ -607,22 +694,38 @@ class ChatServiceV2:
 
         # Si menciona arquitectura hexagonal o patrones específicos
         bool(
-            re.search(r"\b(arquitectura hexagonal|clean architecture|ports and adapters)\b", user_message, re.IGNORECASE)
+            re.search(
+                r"\b(arquitectura hexagonal|clean architecture|ports and adapters)\b",
+                user_message,
+                re.IGNORECASE,
+            )
         )
 
         # Si pregunta por una API específica
         bool(
-            re.search(r"\b(cómo usar|cómo funciona|ejemplo de|ejemplos de)\b.*\w+", user_message, re.IGNORECASE)
+            re.search(
+                r"\b(cómo usar|cómo funciona|ejemplo de|ejemplos de)\b.*\w+",
+                user_message,
+                re.IGNORECASE,
+            )
         )
 
         # Activar siempre que NO sea una consulta general rechazada
         is_general_query = bool(
-            re.search(r"\b(clima|temperatura|hora|dólar|euro|noticias|recetas)\b", user_message, re.IGNORECASE)
+            re.search(
+                r"\b(clima|temperatura|hora|dólar|euro|noticias|recetas)\b",
+                user_message,
+                re.IGNORECASE,
+            )
         )
 
         # Activar para preguntas sobre versiones, novedades y actualizaciones
         bool(
-            re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE)
+            re.search(
+                r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b",
+                user_message,
+                re.IGNORECASE,
+            )
         )
 
         # MODO ULTRA ESTRICTO: SOLO buscar cuando Kimi explícitamente dice "no sé" O hay un error crítico
@@ -642,13 +745,21 @@ class ChatServiceV2:
 
         if "Traceback" in user_message:
             return await self.python_search.search_python_bug(user_message)
-        elif re.search(r"\b(cómo usar|ejemplo|funciona)\b.*\w+\.\w+", user_message, re.IGNORECASE):
+        elif re.search(
+            r"\b(cómo usar|ejemplo|funciona)\b.*\w+\.\w+", user_message, re.IGNORECASE
+        ):
             api_match = re.search(r"(\w+)\.(\w+)", user_message)
             if api_match:
                 module, attr = api_match.groups()
                 return await self.python_search.search_python_api(module, attr)
-        elif re.search(r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b", user_message, re.IGNORECASE):
-            return await self.python_search.search_python_best_practice("latest python version release")
+        elif re.search(
+            r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b",
+            user_message,
+            re.IGNORECASE,
+        ):
+            return await self.python_search.search_python_best_practice(
+                "latest python version release"
+            )
 
         # Default: búsqueda general para cualquier pregunta Python válida
         return await self.python_search.search_python_best_practice(user_message)
@@ -657,7 +768,9 @@ class ChatServiceV2:
         """Construye el contexto para el LLM con las fuentes encontradas."""
         lines = []
         for source in sources:
-            lines.append(f"📚 **{source.title}** ({source.source_type}, confiabilidad: {source.reliability}/10)")
+            lines.append(
+                f"📚 **{source.title}** ({source.source_type}, confiabilidad: {source.reliability}/10)"
+            )
             lines.append(f"🔗 {source.url}")
             lines.append(f"💡 {source.snippet}")
             lines.append("")
@@ -687,7 +800,8 @@ class ChatServiceV2:
                 response, tokens = await self.fallback_llm.get_chat_completion(
                     system_prompt=system_prompt,
                     messages=history,
-                    max_tokens=max_tokens or 2048,  # Más tokens para RAG
+                    max_tokens=max_tokens
+                    or 8192,  # Aumentado para respuestas completas
                     temperature=temperature or 0.3,
                 )
                 return response, tokens
@@ -712,7 +826,9 @@ class ChatServiceV2:
             except Exception as e:
                 # Fallback a Gemini si Kimi falla
                 if use_fallback_on_error and self.fallback_llm:
-                    logger.warning(f"⚠️ Kimi-K2 falló, usando Gemini como fallback. Error: {e}")
+                    logger.warning(
+                        f"⚠️ Kimi-K2 falló, usando Gemini como fallback. Error: {e}"
+                    )
                     response, tokens = await self.fallback_llm.get_chat_completion(
                         system_prompt=system_prompt,
                         messages=history,
