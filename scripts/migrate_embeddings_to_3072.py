@@ -12,7 +12,15 @@ Uso:
 """
 
 import sys
+import os
 import logging
+from pathlib import Path
+
+# Agregar el directorio raíz al path para poder importar src
+_root_dir = Path(__file__).parent.parent
+if str(_root_dir) not in sys.path:
+    sys.path.insert(0, str(_root_dir))
+
 from sqlalchemy import create_engine, text
 
 logging.basicConfig(
