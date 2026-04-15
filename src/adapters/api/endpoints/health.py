@@ -183,7 +183,7 @@ class HealthMonitor:
 
         # Actualizar error (None limpia el error)
         self._provider_states[provider]["last_error"] = error
-        
+
         if latency_ms is not None:
             self._provider_states[provider]["last_latency_ms"] = latency_ms
         if circuit_breaker is not None:

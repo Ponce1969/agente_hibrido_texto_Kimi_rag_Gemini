@@ -40,9 +40,7 @@ class GeminiAdapter(LLMPort):
         self.model = settings.gemini_model_name
 
     def _build_contents(
-        self,
-        system_prompt: str,
-        messages: list[ChatMessage]
+        self, system_prompt: str, messages: list[ChatMessage]
     ) -> dict[str, Any]:
         """
         Construye el payload para la API de Gemini.
@@ -102,12 +100,11 @@ class GeminiAdapter(LLMPort):
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.model}:generateContent?key={self.api_key}"
+            f"{self.model}:generateContent"
         )
 
         payload = self._build_contents(system_prompt, messages)
 
-        # Configuración de generación
         gen_cfg: dict[str, Any] = {}
         if max_tokens is not None:
             gen_cfg["maxOutputTokens"] = max_tokens
@@ -117,10 +114,12 @@ class GeminiAdapter(LLMPort):
         if gen_cfg:
             payload["generationConfig"] = gen_cfg
 
-        # Llamar a API de Gemini
+        headers = {"x-goog-api-key": self.api_key}
+
         response = await self.client.post(
             url,
             json=payload,
+            headers=headers,
             timeout=httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=10.0),
         )
         response.raise_for_status()

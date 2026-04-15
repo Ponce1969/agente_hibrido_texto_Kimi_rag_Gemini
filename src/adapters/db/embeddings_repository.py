@@ -130,14 +130,15 @@ class EmbeddingsRepository:
         query_embedding: Sequence[float],
         file_id: int | None = None,
         top_k: int = 10,
+        min_similarity: float = 0.0,
     ) -> list[SimilarChunk]:
         """Return top-k most similar chunks using cosine distance (<=>).
         If file_id is provided, the search is filtered to that file.
+        If min_similarity is provided (0.0-1.0), results below this threshold are excluded.
 
         IMPORTANTE: Usar <=> (coseno) para que match con el índice HNSW
         creado con vector_cosine_ops. Usar <-> (L2) ignoraría el índice.
         """
-        # Validar dimensión de la query
         query_list = list(query_embedding)
         if len(query_list) != EMBEDDING_DIM:
             raise ValueError(
@@ -145,30 +146,42 @@ class EmbeddingsRepository:
                 f"(esperado: {EMBEDDING_DIM})"
             )
 
-        # Convertir el embedding a string de array de PostgreSQL
         embedding_str = "[" + ",".join(str(x) for x in query_list) + "]"
-        params = {"k": top_k}
-        filter_sql = "WHERE file_id = :fid" if file_id is not None else ""
+        params: dict[str, int | float | str] = {
+            "k": top_k,
+            "embedding_vec": embedding_str,
+        }
+
+        filter_parts: list[str] = []
         if file_id is not None:
+            filter_parts.append("file_id = :fid")
             params["fid"] = file_id
+
+        max_distance: float | None = None
+        if min_similarity > 0.0:
+            max_distance = 1.0 - min_similarity
+            filter_parts.append(
+                "(embedding <=> :embedding_vec::vector) <= :max_distance"
+            )
+            params["max_distance"] = max_distance
+
+        where_clause = f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
 
         sql = text(
             f"""
             SELECT id, file_id, section_id, chunk_index, content,
-                   (embedding <=> '{embedding_str}'::vector) AS distance,
+                   (embedding <=> :embedding_vec::vector) AS distance,
                    page_number, section_type, file_name
             FROM {TABLE_NAME}
-            {filter_sql}
-            ORDER BY embedding <=> '{embedding_str}'::vector
+            {where_clause}
+            ORDER BY embedding <=> :embedding_vec::vector
             LIMIT :k
             """
         )
         with self.engine.begin() as conn:
             res = conn.execute(sql, params)
             out: list[SimilarChunk] = []
-            for (
-                row
-            ) in res.mappings():  # Usar mappings() para acceder por nombre de columna
+            for row in res.mappings():
                 out.append(
                     SimilarChunk(
                         id=row["id"],

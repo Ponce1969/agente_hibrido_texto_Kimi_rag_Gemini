@@ -18,6 +18,8 @@ from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapte
 from src.adapters.config.settings import settings
 from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
 from src.adapters.db.database import get_session
+from src.adapters.db.document_mapper import DocumentMapper
+from src.adapters.db.embeddings_repository import EmbeddingsRepository
 from src.adapters.db.file_repository_adapter import SQLFileRepository
 from src.adapters.db.user_repository import SQLModelUserRepository
 from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
@@ -49,29 +51,36 @@ from src.domain.ports import (
 def get_http_client() -> httpx.Client:
     return httpx.Client()
 
+
 @cache
 def get_async_http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient()
+
 
 # --- Adaptadores ---
 def get_chat_repository(session: Session = Depends(get_session)) -> ChatRepositoryPort:
     return SQLChatRepositoryAdapter(session)
 
+
 def get_file_repository() -> FileRepositoryPort:
     # SQLFileRepository NO recibe Session en el constructor
     return SQLFileRepository()
 
+
 def get_gemini_adapter() -> LLMPort:
     return GeminiAdapter(client=get_async_http_client())
 
-def get_kimi_adapter() -> LLMPort:
-    # Suponiendo que tienes un KimiAdapter
-    # from src.adapters.agents.kimi_adapter import KimiAdapter
-    # return KimiAdapter(client=get_async_http_client())
-    return get_gemini_adapter() # Fallback por ahora
+
+def get_groq_adapter() -> LLMPort:
+    """Factory para el adaptador de Groq (Kimi-K2 a través de la API de Groq)."""
+    from src.adapters.agents.groq_adapter import GroqAdapter
+
+    return GroqAdapter(client=get_async_http_client())
+
 
 def get_gemini_embeddings_adapter() -> EmbeddingsPort:
     return GeminiEmbeddingsAdapter(client=get_async_http_client())
+
 
 def get_python_search_tool() -> PythonSearchPort:
     # BearPythonTool(api_key, base_url) según su firma
@@ -80,28 +89,30 @@ def get_python_search_tool() -> PythonSearchPort:
         base_url=settings.bear_base_url,
     )
 
+
 @cache
 def get_metrics_service() -> MetricsService:
     """Factory para el servicio de métricas (singleton)."""
     metrics_repository = SQLModelMetricsRepository()
     return MetricsService(repository=metrics_repository)
 
+
 # --- Servicios de Aplicación ---
 def get_embeddings_service() -> EmbeddingsServiceV2:
     return EmbeddingsServiceV2(embeddings_client=get_gemini_embeddings_adapter())
+
 
 def get_file_processing_service(
     file_repo: FileRepositoryPort = Depends(get_file_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
 ) -> FileProcessingService:
     return FileProcessingService(
-        file_repo,
-        embeddings_service,
-        max_pdf_size_mb=settings.file_max_pdf_size_mb
+        file_repo, embeddings_service, max_pdf_size_mb=settings.file_max_pdf_size_mb
     )
 
+
 def get_chat_service(
-    llm_client: LLMPort = Depends(get_kimi_adapter),
+    llm_client: LLMPort = Depends(get_groq_adapter),
     fallback_llm: LLMPort = Depends(get_gemini_adapter),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
@@ -109,6 +120,7 @@ def get_chat_service(
     metrics_service: MetricsService = Depends(get_metrics_service),
     file_repository: FileRepositoryPort = Depends(get_file_repository),
 ) -> ChatServiceV2:
+    document_mapper = DocumentMapper(file_repository)
     return ChatServiceV2(
         llm_client=llm_client,
         repository=repository,
@@ -117,10 +129,12 @@ def get_chat_service(
         python_search=python_search,
         metrics_service=metrics_service,
         file_repository=file_repository,
+        document_mapper=document_mapper,
     )
 
+
 def get_chat_service_hibrido_mejorado(
-    llm_client: LLMPort = Depends(get_kimi_adapter),
+    llm_client: LLMPort = Depends(get_groq_adapter),
     fallback_llm: LLMPort = Depends(get_gemini_adapter),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
@@ -134,6 +148,8 @@ def get_chat_service_hibrido_mejorado(
     Incluye modelos locales (LLaMA3.1:8b, Gemma2:2b) como fallback adicional
     y routing inteligente basado en tipo de pregunta.
     """
+    document_mapper = DocumentMapper(file_repository)
+    embeddings_repo = EmbeddingsRepository()
     return ChatServiceHibridoRefactorizado(
         llm_client=llm_client,
         repository=repository,
@@ -142,12 +158,16 @@ def get_chat_service_hibrido_mejorado(
         python_search=python_search,
         metrics_service=metrics_service,
         file_repository=file_repository,
+        document_mapper=document_mapper,
+        embeddings_repo=embeddings_repo,
     )
+
 
 # --- Dependencias para Endpoints de FastAPI ---
 
+
 def get_chat_service_dependency(
-    llm_client: LLMPort = Depends(get_kimi_adapter),
+    llm_client: LLMPort = Depends(get_groq_adapter),
     fallback_llm: LLMPort = Depends(get_gemini_adapter),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
@@ -155,8 +175,7 @@ def get_chat_service_dependency(
     metrics_service: MetricsService = Depends(get_metrics_service),
     file_repository: FileRepositoryPort = Depends(get_file_repository),
 ) -> ChatServiceV2:
-    # Importante: NO llamar directamente a get_chat_service() aquí,
-    # porque fuera del sistema de dependencias retornaría objetos Depends sin resolver.
+    document_mapper = DocumentMapper(file_repository)
     return ChatServiceV2(
         llm_client=llm_client,
         repository=repository,
@@ -165,10 +184,12 @@ def get_chat_service_dependency(
         python_search=python_search,
         metrics_service=metrics_service,
         file_repository=file_repository,
+        document_mapper=document_mapper,
     )
 
+
 def get_chat_service_hibrido_dependency(
-    llm_client: LLMPort = Depends(get_kimi_adapter),
+    llm_client: LLMPort = Depends(get_groq_adapter),
     fallback_llm: LLMPort = Depends(get_gemini_adapter),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
@@ -181,6 +202,8 @@ def get_chat_service_hibrido_dependency(
 
     Esta es la que deben usar los nuevos endpoints híbridos.
     """
+    document_mapper = DocumentMapper(file_repository)
+    embeddings_repo = EmbeddingsRepository()
     return ChatServiceHibridoRefactorizado(
         llm_client=llm_client,
         repository=repository,
@@ -189,10 +212,14 @@ def get_chat_service_hibrido_dependency(
         python_search=python_search,
         metrics_service=metrics_service,
         file_repository=file_repository,
+        document_mapper=document_mapper,
+        embeddings_repo=embeddings_repo,
     )
+
 
 def get_embeddings_service_dependency() -> EmbeddingsServiceV2:
     return get_embeddings_service()
+
 
 def get_file_processing_service_dependency(
     file_repo: FileRepositoryPort = Depends(get_file_repository),
@@ -200,17 +227,18 @@ def get_file_processing_service_dependency(
 ) -> FileProcessingService:
     # Igual que con chat_service: no invocar directamente a una función con Depends.
     return FileProcessingService(
-        file_repo,
-        embeddings_service,
-        max_pdf_size_mb=settings.file_max_pdf_size_mb
+        file_repo, embeddings_service, max_pdf_size_mb=settings.file_max_pdf_size_mb
     )
 
+
 # --- Servicios de Autenticación ---
+
 
 @cache
 def get_password_hasher() -> Argon2PasswordHasher:
     """Factory para el hasher de contraseñas (singleton)."""
     return Argon2PasswordHasher()
+
 
 @cache
 def get_token_service() -> JWTTokenService:
@@ -218,12 +246,16 @@ def get_token_service() -> JWTTokenService:
     return JWTTokenService(
         secret_key=settings.jwt_secret_key,
         algorithm="HS256",
-        expire_minutes=settings.jwt_expire_minutes
+        expire_minutes=settings.jwt_expire_minutes,
     )
 
-def get_user_repository(session: Session = Depends(get_session)) -> SQLModelUserRepository:
+
+def get_user_repository(
+    session: Session = Depends(get_session),
+) -> SQLModelUserRepository:
     """Factory para el repositorio de usuarios."""
     return SQLModelUserRepository(session)
+
 
 def get_auth_service(
     password_hasher: Argon2PasswordHasher = Depends(get_password_hasher),
@@ -234,8 +266,9 @@ def get_auth_service(
     return AuthService(
         password_hasher=password_hasher,
         token_service=token_service,
-        user_repository=user_repository
+        user_repository=user_repository,
     )
+
 
 # --- Guardian ---
 @cache
@@ -245,8 +278,9 @@ def get_guardian_client() -> GuardianPort:
         api_url=settings.guardian_api_url,
         api_key=settings.guardian_api_key,
         timeout=settings.guardian_timeout,
-        enabled=settings.guardian_enabled
+        enabled=settings.guardian_enabled,
     )
+
 
 def _create_guardian_service_instance() -> GuardianService:
     """Crea una instancia del servicio Guardian (sin Depends, para middleware)."""
@@ -255,21 +289,23 @@ def _create_guardian_service_instance() -> GuardianService:
         guardian_client=guardian_client,
         max_calls_per_minute=settings.guardian_max_calls_per_minute,
         cache_ttl=settings.guardian_cache_ttl,
-        min_length_to_check=settings.guardian_min_length
+        min_length_to_check=settings.guardian_min_length,
     )
+
 
 @cache
 def get_guardian_service_for_middleware() -> GuardianService:
     """Factory para el servicio Guardian usado en middleware (sin Depends)."""
     return _create_guardian_service_instance()
 
+
 def get_guardian_service(
-    guardian_client: GuardianPort = Depends(get_guardian_client)
+    guardian_client: GuardianPort = Depends(get_guardian_client),
 ) -> GuardianService:
     """Factory para el servicio Guardian con caché y rate limiting (para endpoints)."""
     return GuardianService(
         guardian_client=guardian_client,
         max_calls_per_minute=settings.guardian_max_calls_per_minute,
         cache_ttl=settings.guardian_cache_ttl,
-        min_length_to_check=settings.guardian_min_length
+        min_length_to_check=settings.guardian_min_length,
     )

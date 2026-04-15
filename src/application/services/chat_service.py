@@ -14,9 +14,8 @@ import re
 import time
 import traceback
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from src.adapters.db.document_mapper import DocumentMapper
 from src.application.services.metrics_service import MetricsService
 from src.application.services.rag_context_service import RagContextService
 from src.domain.models import ChatMessageCreate, ChatSessionCreate, MessageRole
@@ -55,6 +54,7 @@ class ChatServiceV2:
         python_search: PythonSearchPort | None = None,
         metrics_service: MetricsService | None = None,
         file_repository: FileRepositoryPort | None = None,
+        document_mapper: Any | None = None,
     ) -> None:
         """
         Inicializa el servicio de chat.
@@ -67,6 +67,7 @@ class ChatServiceV2:
             python_search: Servicio de búsqueda Python (opcional)
             metrics_service: Servicio de métricas (opcional)
             file_repository: Repositorio de archivos (opcional, para RAG context)
+            document_mapper: Mapper de documentos (opcional, inyectado desde afuera)
         """
         self.llm = llm_client
         self.repo = repository
@@ -74,23 +75,16 @@ class ChatServiceV2:
         self.embeddings = embeddings_service
         self.python_search = python_search
 
-        # Servicios para gestión de contexto RAG
         self.context_service = None
-        self.document_mapper = None
+        self.document_mapper = document_mapper or None
         if file_repository:
             self.context_service = RagContextService(file_repository)
-            self.document_mapper = DocumentMapper(file_repository)
+            if not self.document_mapper:
+                from src.adapters.db.document_mapper import DocumentMapper
 
-        # Servicio de métricas (inyectado o crear uno por defecto)
-        if metrics_service is None:
-            # Importación local para evitar dependencia circular
-            from src.adapters.repositories.metrics_repository import (
-                SQLModelMetricsRepository,
-            )
+                self.document_mapper = DocumentMapper(file_repository)
 
-            self.metrics = MetricsService(repository=SQLModelMetricsRepository())
-        else:
-            self.metrics = metrics_service
+        self.metrics = metrics_service or MetricsService()
 
         # Almacenar últimas fuentes usadas para feedback
         self.last_search_sources: list[PythonSource] = []
@@ -645,17 +639,14 @@ class ChatServiceV2:
 
     def _should_search_internet(self, user_message: str, kimi_response: str) -> bool:
         """Detecta si Kimi no pudo resolver el problema y necesita búsqueda."""
-        # Señal PRINCIPAL: La frase literal que Kimi debe decir según el prompt actualizado
         if "voy a buscar información actualizada sobre esto" in kimi_response.lower():
             return True
 
-        # Señal ANTERIOR (mantener compatibilidad)
         if "voy a buscarlo en internet" in kimi_response.lower():
             return True
 
-        # Señales AMPLIADAS de que Kimi no tiene la información
         uncertainty_signals = [
-            r"\bno tengo información suficiente\b",  # Frase del prompt
+            r"\bno tengo información suficiente\b",
             r"\bno (tengo|cuento con|puedo proporcionar)\b",
             r"\b(desconozco|ignoro|no estoy seguro)\b",
             r"\bno puedo\b",
@@ -679,39 +670,10 @@ class ChatServiceV2:
             for pattern in uncertainty_signals
         )
 
-        # Si el usuario menciona GitHub, búsqueda o internet
-        bool(
-            re.search(
-                r"\b(github|buscar|internet|repo|repositorio)\b",
-                user_message,
-                re.IGNORECASE,
-            )
-        )
-
-        # Si el usuario menciona un traceback o error específico
         traceback_mentioned = bool(
             re.search(r"Traceback|Error|Exception", user_message, re.IGNORECASE)
         )
 
-        # Si menciona arquitectura hexagonal o patrones específicos
-        bool(
-            re.search(
-                r"\b(arquitectura hexagonal|clean architecture|ports and adapters)\b",
-                user_message,
-                re.IGNORECASE,
-            )
-        )
-
-        # Si pregunta por una API específica
-        bool(
-            re.search(
-                r"\b(cómo usar|cómo funciona|ejemplo de|ejemplos de)\b.*\w+",
-                user_message,
-                re.IGNORECASE,
-            )
-        )
-
-        # Activar siempre que NO sea una consulta general rechazada
         is_general_query = bool(
             re.search(
                 r"\b(clima|temperatura|hora|dólar|euro|noticias|recetas)\b",
@@ -720,22 +682,7 @@ class ChatServiceV2:
             )
         )
 
-        # Activar para preguntas sobre versiones, novedades y actualizaciones
-        bool(
-            re.search(
-                r"\b(nueva versión|última versión|actualización|lanzamiento|release)\b.*\bpython\b",
-                user_message,
-                re.IGNORECASE,
-            )
-        )
-
-        # MODO ULTRA ESTRICTO: SOLO buscar cuando Kimi explícitamente dice "no sé" O hay un error crítico
-        # Priorizar la respuesta de Kimi sobre cualquier heurística de la pregunta
         return (kimis_uncertain or traceback_mentioned) and not is_general_query
-
-        # MODO AGRESIVO (comentado): Busca también en preguntas de API, versiones, etc.
-        # return (kimis_uncertain or search_mentioned or traceback_mentioned or
-        #         architecture_mentioned or api_question or version_question) and not is_general_query
 
     async def _search_python_sources(self, user_message: str) -> list[PythonSource]:
         """Ejecuta búsqueda Bear para cualquier pregunta Python válida."""

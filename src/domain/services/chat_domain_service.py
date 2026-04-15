@@ -4,6 +4,7 @@ Servicios de dominio que contienen la lógica de negocio pura.
 Estos servicios operan sobre las entidades de dominio y usan las interfaces
 de repositorio, independientes de cualquier framework o tecnología específica.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -18,11 +19,9 @@ from ..exceptions.domain_exceptions import (
 from ..models.chat_models import (
     ChatMessage,
     ChatSession,
-    FileDocument,
-    FileSection,
     MessageRole,
 )
-from ..models.file_models import FileStatus
+from ..models.file_models import FileDocument, FileSection, FileStatus
 from ..ports.file_repository_port import FileRepositoryPort
 from ..ports.repository_port import ChatRepositoryPort
 
@@ -33,14 +32,17 @@ class ChatDomainService:
     def __init__(self, chat_repository: ChatRepositoryPort) -> None:
         self.chat_repository = chat_repository
 
-    async def create_new_session(self, user_id: str, session_name: str | None = None) -> ChatSession:
+    async def create_new_session(
+        self, user_id: str, session_name: str | None = None
+    ) -> ChatSession:
         """Crea una nueva sesión de chat."""
         # Crear la nueva sesión usando el método correcto
         from ..models.chat_models import ChatSessionCreate
 
         session_data = ChatSessionCreate(
             user_id=user_id,
-            title=session_name or f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+            title=session_name
+            or f"Chat {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
         )
 
         return self.chat_repository.create_session(session_data)
@@ -50,7 +52,7 @@ class ChatDomainService:
         session_id: str,
         user_id: str,
         content: str,
-        role: MessageRole = MessageRole.USER
+        role: MessageRole = MessageRole.USER,
     ) -> ChatMessage:
         """Agrega un mensaje a una sesión existente."""
         # Validar la sesión
@@ -66,7 +68,9 @@ class ChatDomainService:
             raise InvalidMessageError("El mensaje no puede estar vacío")
 
         if len(content) > 50000:  # Límite de caracteres
-            raise InvalidMessageError("El mensaje es demasiado largo", "máximo 50,000 caracteres")
+            raise InvalidMessageError(
+                "El mensaje es demasiado largo", "máximo 50,000 caracteres"
+            )
 
         # Crear el mensaje usando ChatMessageCreate
         from ..models.chat_models import ChatMessageCreate
@@ -84,7 +88,7 @@ class ChatDomainService:
         session_id: str,
         user_id: str,
         max_messages: int = 20,
-        include_system: bool = True
+        include_system: bool = True,
     ) -> list[ChatMessage]:
         """Obtiene el contexto de la conversación."""
         session = self.chat_repository.get_session(session_id)
@@ -114,14 +118,18 @@ class ChatDomainService:
 
         total_sessions = len(user_sessions)
         active_sessions = len([s for s in user_sessions if s.is_active])
-        total_messages = sum(self.chat_repository.count_session_messages(s.id) for s in user_sessions)
+        total_messages = sum(
+            self.chat_repository.count_session_messages(s.id) for s in user_sessions
+        )
 
         return {
             "user_id": user_id,
             "total_sessions": total_sessions,
             "active_sessions": active_sessions,
             "total_messages": total_messages,
-            "average_messages_per_session": total_messages / total_sessions if total_sessions > 0 else 0
+            "average_messages_per_session": total_messages / total_sessions
+            if total_sessions > 0
+            else 0,
         }
 
 
@@ -137,21 +145,23 @@ class FileDomainService:
         filename_saved: str,
         file_path: str,
         file_size: int,
-        content_type: str
+        content_type: str,
     ) -> FileDocument:
         """Procesa un archivo subido."""
         # Validar el archivo
         if file_size > 100 * 1024 * 1024:  # 100MB
-            raise ValidationError("file_size", str(file_size), "Archivo demasiado grande")
+            raise ValidationError(
+                "file_size", str(file_size), "Archivo demasiado grande"
+            )
 
         if not self._is_supported_content_type(content_type):
-            raise ValidationError("content_type", content_type, "Tipo de archivo no soportado")
+            raise ValidationError(
+                "content_type", content_type, "Tipo de archivo no soportado"
+            )
 
         # Crear registro del archivo usando el método correcto
         file_doc = self.file_repository.create_file_record(
-            filename=filename_saved,
-            file_path=file_path,
-            size_bytes=file_size
+            filename=filename_saved, file_path=file_path, size_bytes=file_size
         )
 
         return file_doc
@@ -162,7 +172,7 @@ class FileDomainService:
         title: str | None,
         start_page: int,
         end_page: int,
-        text_content: str
+        text_content: str,
     ) -> FileSection:
         """Agrega una sección a un archivo."""
         # Verificar que el archivo existe
@@ -171,7 +181,9 @@ class FileDomainService:
             raise FileNotFoundError(file_id)
 
         if file_doc.status == FileStatus.ERROR:
-            raise ValidationError("file", str(file_id), "El archivo tiene errores de procesamiento")
+            raise ValidationError(
+                "file", str(file_id), "El archivo tiene errores de procesamiento"
+            )
 
         # Crear la sección
         section = FileSection(
@@ -180,7 +192,7 @@ class FileDomainService:
             start_page=start_page,
             end_page=end_page,
             char_count=len(text_content),
-            text_content=text_content
+            text_content=text_content,
         )
 
         # Guardar la sección (simulado, ya que el puerto no tiene save_section)
@@ -196,10 +208,7 @@ class FileDomainService:
         return file_doc
 
     async def search_file_content(
-        self,
-        file_id: int,
-        query: str,
-        max_results: int = 10
+        self, file_id: int, query: str, max_results: int = 10
     ) -> list[FileSection]:
         """Busca contenido específico en un archivo."""
         if not query.strip():
@@ -211,17 +220,19 @@ class FileDomainService:
 
         # Buscar en las secciones (simulado, ya que el puerto no tiene search_sections_by_content)
         sections = self.file_repository.get_file_sections(file_id)
-        filtered_sections = [s for s in sections if query.lower() in (s.text_content or "").lower()]
+        filtered_sections = [
+            s for s in sections if query.lower() in (s.text_content or "").lower()
+        ]
 
         return filtered_sections[:max_results]
 
     def _is_supported_content_type(self, content_type: str) -> bool:
         """Verifica si el tipo de contenido es soportado."""
         supported_types = [
-            'application/pdf',
-            'text/plain',
-            'text/markdown',
-            'application/json'
+            "application/pdf",
+            "text/plain",
+            "text/markdown",
+            "application/json",
         ]
         return content_type.lower() in supported_types
 
@@ -231,8 +242,10 @@ class FileDomainService:
         files = self.file_repository.list_files()
         return {
             "total_files": len(files),
-            "processed_files": len([f for f in files if f.status == FileStatus.PROCESSED]),
-            "error_files": len([f for f in files if f.status == FileStatus.ERROR])
+            "processed_files": len(
+                [f for f in files if f.status == FileStatus.PROCESSED]
+            ),
+            "error_files": len([f for f in files if f.status == FileStatus.ERROR]),
         }
 
 
@@ -252,7 +265,9 @@ class ValidationService:
     def validate_session_name(session_name: str | None) -> None:
         """Valida un nombre de sesión."""
         if session_name and len(session_name) > 200:
-            raise ValidationError("session_name", session_name, "Nombre demasiado largo")
+            raise ValidationError(
+                "session_name", session_name, "Nombre demasiado largo"
+            )
 
     @staticmethod
     def validate_message_content(content: str) -> None:
@@ -269,7 +284,11 @@ class ValidationService:
         max_size_bytes = max_size_mb * 1024 * 1024
 
         if file_size <= 0:
-            raise ValidationError("file_size", str(file_size), "Tamaño debe ser positivo")
+            raise ValidationError(
+                "file_size", str(file_size), "Tamaño debe ser positivo"
+            )
 
         if file_size > max_size_bytes:
-            raise ValidationError("file_size", str(file_size), f"Tamaño excede {max_size_mb}MB")
+            raise ValidationError(
+                "file_size", str(file_size), f"Tamaño excede {max_size_mb}MB"
+            )

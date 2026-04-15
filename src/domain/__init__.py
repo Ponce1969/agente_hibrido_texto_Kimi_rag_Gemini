@@ -26,10 +26,9 @@ from .exceptions.domain_exceptions import (
 from .models.chat_models import (
     ChatMessage,
     ChatSession,
-    FileDocument,
-    FileSection,
     MessageRole,
 )
+from .models.file_models import FileDocument, FileSection
 
 # Interfaces de repositorio (ahora en ports/)
 # Las interfaces están en domain/ports/ siguiendo arquitectura hexagonal
@@ -56,14 +55,12 @@ __all__ = [
     "InsufficientContextError",
     "RateLimitExceededError",
     "ValidationError",
-
     # Modelos
     "ChatMessage",
     "ChatSession",
     "FileDocument",
     "FileSection",
     "MessageRole",
-
     # Servicios
     "ChatDomainService",
     "FileDomainService",

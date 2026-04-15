@@ -1,35 +1,37 @@
 """
 ChatServiceHibrido REFACTORIZADO - Versión limpia.
 """
+
 import logging
 from typing import Any
 
-from src.adapters.agents.gemini_adapter import GeminiAdapter
 from src.application.services.chat_service import ChatServiceV2
 from src.application.services.rag.query_service import RagQueryService
 from src.application.services.rag_context_service import RagContextService
 
 logger = logging.getLogger(__name__)
 
+
 class ChatServiceHibridoRefactorizado(ChatServiceV2):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        embeddings_repo: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
 
-        # Inicializar servicios de RAG
         self.rag_context_service: RagContextService | None = None
         self.rag_query_service: RagQueryService | None = None
 
-        if self.document_mapper and self.document_mapper.file_repository:
+        if self.document_mapper and hasattr(self.document_mapper, "file_repository"):
             self.rag_context_service = RagContextService(
                 file_repository=self.document_mapper.file_repository
             )
 
-        if self.embeddings and self.fallback_llm and isinstance(self.fallback_llm, GeminiAdapter):
-            from src.adapters.db.embeddings_repository import EmbeddingsRepository
-            embeddings_repo = EmbeddingsRepository()
+        if self.embeddings and self.fallback_llm and embeddings_repo:
             self.rag_query_service = RagQueryService(
-                embeddings_repository=embeddings_repo,
-                gemini_adapter=self.fallback_llm
+                embeddings_repository=embeddings_repo, gemini_adapter=self.fallback_llm
             )
 
     async def handle_message(
@@ -39,7 +41,7 @@ class ChatServiceHibridoRefactorizado(ChatServiceV2):
         *,
         agent_mode: str = "architect",
         file_id: int | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> str:
         """Versión refactorizada con contexto RAG"""
 
@@ -53,15 +55,11 @@ class ChatServiceHibridoRefactorizado(ChatServiceV2):
             logger.info(f"📚 Usando RAG con file_id={resolved_file_id}")
 
             # Actualizar contexto
-            self.rag_context_service.set_current_file_id(
-                session_id, resolved_file_id
-            )
+            self.rag_context_service.set_current_file_id(session_id, resolved_file_id)
 
             # Ejecutar RAG
             return await self.rag_query_service.query_rag(
-                query=user_message,
-                file_id=resolved_file_id,
-                session_id=session_id
+                query=user_message, file_id=resolved_file_id, session_id=session_id
             )
 
         # 3. Si no hay documento, routing normal
@@ -70,14 +68,11 @@ class ChatServiceHibridoRefactorizado(ChatServiceV2):
             user_message=user_message,
             agent_mode=agent_mode,
             file_id=None,
-            **kwargs
+            **kwargs,
         )
 
     async def _resolve_file_id_with_context(
-        self,
-        session_id: str,
-        user_message: str,
-        explicit_file_id: int | None
+        self, session_id: str, user_message: str, explicit_file_id: int | None
     ) -> int | None:
         """Resuelve file_id usando contexto y referencias"""
 

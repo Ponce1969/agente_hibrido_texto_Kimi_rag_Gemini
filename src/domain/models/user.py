@@ -3,7 +3,8 @@ Modelo de dominio para usuarios del sistema.
 
 Define la entidad User con sus atributos y validaciones.
 """
-from datetime import datetime
+
+from datetime import UTC, datetime
 
 from sqlmodel import Field, SQLModel
 
@@ -22,8 +23,9 @@ class User(SQLModel, table=True):
         created_at: Fecha de creación del usuario
         updated_at: Fecha de última actualización
     """
+
     __tablename__ = "users"
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = {"extend_existing": True}
 
     id: int | None = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True, max_length=255)
@@ -31,23 +33,25 @@ class User(SQLModel, table=True):
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         """Configuración del modelo."""
+
         json_schema_extra = {
             "example": {
                 "email": "user@example.com",
                 "full_name": "John Doe",
                 "is_active": True,
-                "is_superuser": False
+                "is_superuser": False,
             }
         }
 
 
 class UserCreate(SQLModel):
     """Schema para crear un nuevo usuario."""
+
     email: str = Field(max_length=255)
     password: str = Field(min_length=8, max_length=100)
     full_name: str | None = Field(default=None, max_length=255)
@@ -55,12 +59,14 @@ class UserCreate(SQLModel):
 
 class UserLogin(SQLModel):
     """Schema para login de usuario."""
+
     email: str = Field(max_length=255)
     password: str = Field(max_length=100)
 
 
 class UserResponse(SQLModel):
     """Schema para respuestas de usuario (sin contraseña)."""
+
     id: int
     email: str
     full_name: str | None = None
@@ -70,11 +76,13 @@ class UserResponse(SQLModel):
 
     class Config:
         """Configuración del schema."""
+
         from_attributes = True
 
 
 class TokenResponse(SQLModel):
     """Schema para respuesta de autenticación."""
+
     access_token: str
     token_type: str = "bearer"
     user: UserResponse

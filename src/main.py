@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -27,25 +28,25 @@ from src.adapters.config.settings import settings
 from src.adapters.db.database import create_db_and_tables
 from src.adapters.dependencies import get_guardian_service_for_middleware
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Al iniciar la aplicación
-    print("Iniciando aplicación y creando tablas de la base de datos...")
+    logger.info("Iniciando aplicación y creando tablas de la base de datos...")
     create_db_and_tables()
 
-    # Crear tabla de embeddings (pgvector)
     try:
         from src.adapters.db.embeddings_repository import EmbeddingsRepository
+
         embeddings_repo = EmbeddingsRepository()
         embeddings_repo.ensure_schema()
-        print("✅ Tabla document_chunks creada/verificada con pgvector")
+        logger.info("Tabla document_chunks creada/verificada con pgvector")
     except Exception as e:
-        print(f"⚠️ No se pudo crear tabla de embeddings: {e}")
+        logger.warning(f"No se pudo crear tabla de embeddings: {e}")
 
     yield
-    # Al apagar la aplicación (si se necesita limpieza)
-    print("Apagando aplicación...")
+    logger.info("Apagando aplicación...")
 
 
 # Configurar Rate Limiter
@@ -71,28 +72,35 @@ register_exception_handlers(app)
 
 # 🛡️ Agregar Guardian Middleware (ANTES de CORS)
 if settings.guardian_enabled:
-    print("🛡️ Guardian de seguridad activado")
+    logger.info("Guardian de seguridad activado")
     app.add_middleware(
         GuardianMiddleware,
         guardian_service=get_guardian_service_for_middleware(),
         enabled=settings.guardian_enabled,
-        rag_api_key=settings.rag_api_key  # Inyectar RAG_API_KEY para bypass del CLI
+        rag_api_key=settings.rag_api_key,
     )
 else:
-    print("⚠️ Guardian de seguridad desactivado")
+    logger.warning("Guardian de seguridad desactivado")
 
 # Configurar CORS mejorado
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:8501",  # Streamlit local (desarrollo)
-        "http://localhost:3000",  # React local (si aplica)
-        "https://app3.loquinto.com",  # Frontend Streamlit en producción (Cloudflare Tunnel)
-        "https://api3.loquinto.com",  # Backend FastAPI en producción (Cloudflare Tunnel)
+        "http://localhost:8501",
+        "http://localhost:3000",
+        "https://app3.loquinto.com",
+        "https://api3.loquinto.com",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-API-Key",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+    ],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
 
@@ -102,9 +110,17 @@ app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
 app.include_router(files.router, prefix="/api/v1", tags=["Files"])
 app.include_router(pg.router, prefix="/api/v1", tags=["PostgreSQL"])
 app.include_router(embeddings.router, prefix="/api/v1", tags=["Embeddings"])
-app.include_router(chat_bear.router, prefix="/api/v1")  # Bear Search (tag definido en el router)
-app.include_router(metrics.router, prefix="/api/v1")  # Métricas de tokens (tag definido en el router)
+app.include_router(
+    chat_bear.router, prefix="/api/v1"
+)  # Bear Search (tag definido en el router)
+app.include_router(
+    metrics.router, prefix="/api/v1"
+)  # Métricas de tokens (tag definido en el router)
 app.include_router(guardian.router, prefix="/api/v1")  # Guardian de seguridad
 app.include_router(hibrido_status.router, prefix="/api/v1")  # Sistema Híbrido Mejorado
-app.include_router(llm_gateway.router, prefix="/api/internal", tags=["LLM Gateway - Internal"])  # Gateway para modelos locales
-app.include_router(health.router, prefix="/api/v1", tags=["Monitoring"])  # Health check con observabilidad
+app.include_router(
+    llm_gateway.router, prefix="/api/internal", tags=["LLM Gateway - Internal"]
+)  # Gateway para modelos locales
+app.include_router(
+    health.router, prefix="/api/v1", tags=["Monitoring"]
+)  # Health check con observabilidad

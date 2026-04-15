@@ -95,11 +95,11 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
         if not text.strip():
             raise ValueError("El texto no puede estar vacío")
 
-        # Construir URL de la API
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.EMBEDDING_MODEL}:embedContent?key={self.api_key}"
+            f"{self.EMBEDDING_MODEL}:embedContent"
         )
+        headers = {"x-goog-api-key": self.api_key}
 
         # Payload para la API con MRL (Matryoshka Representation Learning)
         payload = {
@@ -117,6 +117,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
                 response = await self.client.post(
                     url,
                     json=payload,
+                    headers=headers,
                     timeout=httpx.Timeout(
                         30.0, connect=10.0, read=60.0, write=10.0, pool=10.0
                     ),
@@ -356,6 +357,7 @@ class GeminiEmbeddingsAdapter(EmbeddingsPort):
             query_embedding=query_list,
             file_id=int(file_id),
             top_k=top_k,
+            min_similarity=min_similarity,
         )
 
         # Convertir a SearchResult
