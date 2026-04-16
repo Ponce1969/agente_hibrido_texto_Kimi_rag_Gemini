@@ -24,20 +24,15 @@ class GroqAdapter(LLMPort):
     Adaptador de Groq que implementa el puerto LLMPort.
 
     Características:
-    - Usa API de Groq (Kimi-K2)
+    - Usa API de Groq (Kimi-K2 por defecto, configurable via settings)
     - Sistema de caché de prompts integrado
     - Limitación de historial automática
     - Métricas de tokens
     """
 
-    def __init__(self, client: httpx.AsyncClient) -> None:
-        """
-        Inicializa el adaptador de Groq.
-
-        Args:
-            client: Cliente HTTP asíncrono para hacer requests
-        """
+    def __init__(self, client: httpx.AsyncClient, model: str | None = None) -> None:
         self.client = client
+        self.model = model or settings.groq_model_name
 
     async def get_chat_completion(
         self,
@@ -73,15 +68,16 @@ class GroqAdapter(LLMPort):
 
             # Convertir string a AgentMode si es necesario
             try:
-                mode_enum = AgentMode(agent_mode) if isinstance(agent_mode, str) else agent_mode
+                mode_enum = (
+                    AgentMode(agent_mode) if isinstance(agent_mode, str) else agent_mode
+                )
             except ValueError:
                 mode_enum = None
 
             if mode_enum:
                 # Obtener prompt optimizado
                 optimized_prompt, is_cached = prompt_manager.get_prompt(
-                    session_id=session_id,
-                    agent_mode=mode_enum
+                    session_id=session_id, agent_mode=mode_enum
                 )
 
                 # Limitar historial
@@ -94,7 +90,7 @@ class GroqAdapter(LLMPort):
                     system_prompt=optimized_prompt,
                     history=limited_messages,
                     user_message=user_msg,
-                    is_cached=is_cached
+                    is_cached=is_cached,
                 )
 
                 # Usar prompt y mensajes optimizados
@@ -105,10 +101,7 @@ class GroqAdapter(LLMPort):
         # Construir mensajes para API
         api_messages = [
             {"role": "system", "content": system_prompt},
-            *[
-                {"role": msg.role.value, "content": msg.content}
-                for msg in messages
-            ],
+            *[{"role": msg.role.value, "content": msg.content} for msg in messages],
         ]
 
         # Llamar a API de Groq
@@ -120,8 +113,10 @@ class GroqAdapter(LLMPort):
             },
             json={
                 "messages": api_messages,
-                "model": settings.groq_model_name,
-                "temperature": temperature if temperature is not None else settings.temperature,
+                "model": self.model,
+                "temperature": temperature
+                if temperature is not None
+                else settings.temperature,
                 "max_tokens": max_tokens or settings.max_tokens,
             },
             timeout=httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=10.0),

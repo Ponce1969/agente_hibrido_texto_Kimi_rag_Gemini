@@ -25,7 +25,7 @@ def _create_adapter(provider: str, model: str, client: httpx.AsyncClient) -> LLM
     if provider == "groq":
         from src.adapters.agents.groq_adapter import GroqAdapter
 
-        return GroqAdapter(client=client)
+        return GroqAdapter(client=client, model=model)
 
     if provider == "gemini":
         from src.adapters.agents.gemini_adapter import GeminiAdapter

@@ -15,7 +15,7 @@ from fastapi import (
 )
 from pydantic import BaseModel
 
-from src.adapters.api.auth_dependency import get_current_user
+from src.adapters.api.auth_dependency import get_current_user, get_current_user_optional
 from src.adapters.dependencies import get_file_processing_service_dependency
 from src.application.services.file_processing_service import FileProcessingService
 
@@ -50,7 +50,7 @@ async def upload_file(
     auto_index: bool = Query(
         False, description="Iniciar procesamiento e indexación automáticamente"
     ),
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     try:
@@ -75,7 +75,7 @@ async def upload_file(
 @router.get("/files", response_model=list[FileStatusResponse], tags=["Files"])
 def list_files(
     limit: int = Query(20, ge=1, le=200),
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     try:

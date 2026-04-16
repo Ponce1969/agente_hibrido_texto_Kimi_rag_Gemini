@@ -12,7 +12,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from src.adapters.agents.prompts import AgentMode
-from src.adapters.api.auth_dependency import get_current_user
+from src.adapters.api.auth_dependency import get_current_user, get_current_user_optional
 from src.adapters.dependencies import get_chat_service_dependency
 from src.application.services.chat_service import ChatServiceV2
 
@@ -73,7 +73,7 @@ def create_new_session(
 async def handle_chat(
     request: Request,
     chat_request: ChatRequest,
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Maneja un mensaje de chat y devuelve la respuesta de la IA."""

@@ -6,17 +6,16 @@ Create Date: 2026-04-15 22:23:44.762465
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "bd01f37689db"
-down_revision: Union[str, Sequence[str], None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -177,29 +176,15 @@ def upgrade() -> None:
     )
     op.create_index("ix_error_logs_error_type", "error_logs", ["error_type"])
 
-    # Document chunks (pgvector) - only for PostgreSQL
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    op.create_table(
-        "document_chunks",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=False),
-        sa.Column("section_id", sa.Integer(), nullable=True),
-        sa.Column("chunk_index", sa.Integer(), nullable=False),
-        sa.Column("content", sa.Text(), nullable=False),
-        sa.Column(
-            "embedding", postgresql.ARRAY(sa.Float(), dimensions=768), nullable=True
-        ),
-        sa.Column("page_number", sa.Integer(), nullable=True),
-        sa.Column("section_type", sa.String(), nullable=True),
-        sa.Column("file_name", sa.String(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_document_chunks_file_id", "document_chunks", ["file_id"])
+    # NOTE: document_chunks is created by EmbeddingsRepository.ensure_schema()
+    # which uses the proper pgvector VECTOR type, not ARRAY(Float).
+    # Do NOT create it here to avoid type mismatch.
 
 
 def downgrade() -> None:
     """Drop all tables."""
-    op.drop_table("document_chunks")
+    # NOTE: document_chunks is dropped separately by the embeddings system
+    op.drop_table("error_logs")
     op.drop_table("error_logs")
     op.drop_table("daily_metrics_summary")
     op.drop_table("agent_metrics")

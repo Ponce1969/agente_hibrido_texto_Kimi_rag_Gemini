@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.adapters.api.auth_dependency import get_current_user
+from src.adapters.api.auth_dependency import get_current_user_optional
 from src.adapters.dependencies import (
     get_embeddings_service_dependency,
     get_file_processing_service_dependency,
@@ -33,7 +33,7 @@ router = APIRouter()
 async def embeddings_index(
     request: Request,
     file_id: int,
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     """Inicia el proceso de chunking, extracción de texto e indexación de un archivo."""
@@ -62,7 +62,7 @@ async def embeddings_search(
     q: str = Query(..., description="Consulta de texto"),
     file_id: int | None = Query(None),
     top_k: int = Query(10, ge=1, le=50),
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: EmbeddingsServiceV2 = Depends(get_embeddings_service_dependency),
 ):
     """Realiza una búsqueda semántica en los chunks de un archivo o en todos."""
