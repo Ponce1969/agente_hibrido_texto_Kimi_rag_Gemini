@@ -70,9 +70,9 @@ class UserResponse(SQLModel):
     id: int
     email: str
     full_name: str | None = None
-    is_active: bool
-    is_superuser: bool
-    created_at: datetime
+    is_active: bool = True
+    is_superuser: bool = False
+    created_at: datetime | None = None
 
     class Config:
         """Configuración del schema."""

@@ -1,28 +1,31 @@
 """
-Endpoints de autenticación (registro y login).
+Endpoints de autenticación (registro, login y perfil).
 
 Implementa los endpoints para gestionar usuarios siguiendo arquitectura hexagonal.
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from src.adapters.api.auth_dependency import get_current_user
 from src.adapters.dependencies import get_auth_service
 from src.application.services.auth_service import AuthService
 from src.domain.models.user import TokenResponse, UserCreate, UserLogin, UserResponse
 
 logger = logging.getLogger(__name__)
 
-# Configurar limiter
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/hour")  # Límite: 5 registros por hora por IP
+@router.post(
+    "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED
+)
+@limiter.limit("5/hour")
 async def register(
     request: Request,
     user_data: UserCreate,
@@ -42,13 +45,13 @@ async def register(
         result = auth_service.register_user(
             email=user_data.email,
             password=user_data.password,
-            full_name=user_data.full_name
+            full_name=user_data.full_name,
         )
 
         return TokenResponse(
             access_token=result["access_token"],
             token_type=result["token_type"],
-            user=UserResponse(**result["user"])
+            user=UserResponse(**result["user"]),
         )
     except ValueError as e:
         logger.warning(f"Error de validación en registro: {e}")
@@ -57,12 +60,12 @@ async def register(
         logger.error(f"Error al registrar usuario: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno al registrar usuario"
+            detail="Error interno al registrar usuario",
         )
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("10/minute")  # Límite: 10 intentos de login por minuto
+@limiter.limit("10/minute")
 async def login(
     request: Request,
     credentials: UserLogin,
@@ -79,14 +82,13 @@ async def login(
     """
     try:
         result = auth_service.login_user(
-            email=credentials.email,
-            password=credentials.password
+            email=credentials.email, password=credentials.password
         )
 
         return TokenResponse(
             access_token=result["access_token"],
             token_type=result["token_type"],
-            user=UserResponse(**result["user"])
+            user=UserResponse(**result["user"]),
         )
     except ValueError as e:
         logger.warning(f"Intento de login fallido para {credentials.email}: {e}")
@@ -99,22 +101,24 @@ async def login(
         logger.error(f"Error al autenticar usuario: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno al autenticar"
+            detail="Error interno al autenticar",
         )
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user(
-    auth_service: AuthService = Depends(get_auth_service),
-    # TODO: Agregar dependency para extraer token del header Authorization
+async def get_current_user_info(
+    user: dict = Depends(get_current_user),
 ):
     """
     Obtiene los datos del usuario autenticado actual.
 
-    Requiere token de autenticación en el header Authorization.
+    Requiere token JWT en el header Authorization: Bearer <token>
     """
-    # TODO: Implementar extracción y validación del token
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Endpoint en desarrollo"
+    return UserResponse(
+        id=int(user["user_id"]),
+        email=user["email"],
+        full_name=None,
+        is_active=True,
+        is_superuser=False,
+        created_at=None,
     )

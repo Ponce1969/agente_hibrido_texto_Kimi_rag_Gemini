@@ -1,12 +1,14 @@
 """
 Endpoints para la gestión de embeddings, refactorizados para seguir la arquitectura hexagonal.
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from src.adapters.api.auth_dependency import get_current_user
 from src.adapters.dependencies import (
     get_embeddings_service_dependency,
     get_file_processing_service_dependency,
@@ -25,12 +27,13 @@ router = APIRouter()
 @router.post(
     "/embeddings/index/{file_id}",
     tags=["Embeddings"],
-    summary="Indexa el contenido de un archivo procesado"
+    summary="Indexa el contenido de un archivo procesado",
 )
 @limiter.limit("5/minute")  # Límite: 5 requests por minuto (operación muy costosa)
 async def embeddings_index(
     request: Request,
     file_id: int,
+    user: dict = Depends(get_current_user),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     """Inicia el proceso de chunking, extracción de texto e indexación de un archivo."""
@@ -45,26 +48,27 @@ async def embeddings_index(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error crítico al indexar archivo {file_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error interno al indexar el archivo: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error interno al indexar el archivo: {e}"
+        )
 
 
 @router.get(
     "/embeddings/search",
     tags=["Embeddings"],
-    summary="Búsqueda por similitud en embeddings"
+    summary="Búsqueda por similitud en embeddings",
 )
 async def embeddings_search(
     q: str = Query(..., description="Consulta de texto"),
     file_id: int | None = Query(None),
     top_k: int = Query(10, ge=1, le=50),
+    user: dict = Depends(get_current_user),
     service: EmbeddingsServiceV2 = Depends(get_embeddings_service_dependency),
 ):
     """Realiza una búsqueda semántica en los chunks de un archivo o en todos."""
     try:
         results = await service.search_similar(
-            query=q,
-            file_id=str(file_id) if file_id else None,
-            top_k=top_k
+            query=q, file_id=str(file_id) if file_id else None, top_k=top_k
         )
         return {
             "query": q,
@@ -77,4 +81,6 @@ async def embeddings_search(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error en búsqueda de embeddings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error interno al realizar la búsqueda")
+        raise HTTPException(
+            status_code=500, detail="Error interno al realizar la búsqueda"
+        )

@@ -1,6 +1,7 @@
 """
 Endpoints para la gestión de archivos, refactorizados para seguir la arquitectura hexagonal.
 """
+
 import logging
 
 from fastapi import (
@@ -14,17 +15,20 @@ from fastapi import (
 )
 from pydantic import BaseModel
 
+from src.adapters.api.auth_dependency import get_current_user
 from src.adapters.dependencies import get_file_processing_service_dependency
 from src.application.services.file_processing_service import FileProcessingService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 # --- Schemas ---
 class FileUploadResponse(BaseModel):
     file_id: int
     filename: str
     size_bytes: int
+
 
 class FileStatusResponse(BaseModel):
     id: int
@@ -37,12 +41,16 @@ class FileStatusResponse(BaseModel):
     size_bytes: int | None = None
     mime_type: str | None = None
 
+
 # --- Endpoints ---
 @router.post("/files/upload", response_model=FileUploadResponse, tags=["Files"])
 async def upload_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    auto_index: bool = Query(False, description="Iniciar procesamiento e indexación automáticamente"),
+    auto_index: bool = Query(
+        False, description="Iniciar procesamiento e indexación automáticamente"
+    ),
+    user: dict = Depends(get_current_user),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     try:
@@ -53,17 +61,21 @@ async def upload_file(
         return FileUploadResponse(
             file_id=int(file_doc.id),
             filename=file_doc.filename,
-            size_bytes=file.size, # Aproximación, el tamaño real está en el servicio
+            size_bytes=file.size,  # Aproximación, el tamaño real está en el servicio
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error al subir archivo: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error interno al subir el archivo.")
+        raise HTTPException(
+            status_code=500, detail="Error interno al subir el archivo."
+        )
+
 
 @router.get("/files", response_model=list[FileStatusResponse], tags=["Files"])
 def list_files(
     limit: int = Query(20, ge=1, le=200),
+    user: dict = Depends(get_current_user),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     try:
@@ -73,15 +85,21 @@ def list_files(
         for f in files:
             # Asegurar tipos correctos
             fid = (
-                int(f.id) if isinstance(f.id, str) and f.id.isdigit()
+                int(f.id)
+                if isinstance(f.id, str) and f.id.isdigit()
                 else (f.id if isinstance(f.id, int) else int(str(f.id)))
             )
             status_str = f.status.value if hasattr(f.status, "value") else str(f.status)
 
             # Convertir created_at a string ISO (requerido)
             from datetime import UTC, datetime
+
             if f.created_at:
-                created_at_str = f.created_at.isoformat() if hasattr(f.created_at, 'isoformat') else str(f.created_at)
+                created_at_str = (
+                    f.created_at.isoformat()
+                    if hasattr(f.created_at, "isoformat")
+                    else str(f.created_at)
+                )
             else:
                 # Fallback si no hay created_at
                 created_at_str = datetime.now(UTC).isoformat()
@@ -103,11 +121,17 @@ def list_files(
     except Exception as e:
         logger.error(f"Error al listar archivos: {e}", exc_info=True)
         # Devolver detalle para diagnosticar rápidamente
-        raise HTTPException(status_code=500, detail=f"Error al listar archivos: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al listar archivos: {type(e).__name__}: {e}"
+        )
 
-@router.get("/files/status/{file_id}", response_model=FileStatusResponse, tags=["Files"])
+
+@router.get(
+    "/files/status/{file_id}", response_model=FileStatusResponse, tags=["Files"]
+)
 def get_file_status(
     file_id: int,
+    user: dict = Depends(get_current_user),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     file_doc = service.get_file_status(file_id)
@@ -118,11 +142,19 @@ def get_file_status(
     from datetime import UTC, datetime
 
     if file_doc.created_at:
-        created_at_str = file_doc.created_at.isoformat() if hasattr(file_doc.created_at, 'isoformat') else str(file_doc.created_at)
+        created_at_str = (
+            file_doc.created_at.isoformat()
+            if hasattr(file_doc.created_at, "isoformat")
+            else str(file_doc.created_at)
+        )
     else:
         created_at_str = datetime.now(UTC).isoformat()
 
-    status_str = file_doc.status.value if hasattr(file_doc.status, 'value') else str(file_doc.status)
+    status_str = (
+        file_doc.status.value
+        if hasattr(file_doc.status, "value")
+        else str(file_doc.status)
+    )
 
     return FileStatusResponse(
         id=int(file_doc.id),
@@ -136,10 +168,12 @@ def get_file_status(
         mime_type=None,
     )
 
+
 @router.post("/files/process/{file_id}", status_code=202, tags=["Files"])
 def trigger_processing(
     file_id: int,
     background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     """Inicia el procesamiento de secciones de un archivo en segundo plano."""
@@ -150,9 +184,11 @@ def trigger_processing(
     background_tasks.add_task(service.process_pdf_sections, file_id)
     return {"message": "Procesamiento iniciado"}
 
+
 @router.delete("/files/{file_id}", status_code=204, tags=["Files"])
 def delete_file(
     file_id: int,
+    user: dict = Depends(get_current_user),
     service: FileProcessingService = Depends(get_file_processing_service_dependency),
 ):
     """
@@ -169,4 +205,6 @@ def delete_file(
         return None  # HTTP 204 No Content
     except Exception as e:
         logger.error(f"Error al eliminar archivo {file_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error al eliminar archivo: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al eliminar archivo: {str(e)}"
+        )
