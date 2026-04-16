@@ -1,8 +1,7 @@
 """
 Adaptador de Groq que implementa LLMPort.
 
-Este adaptador conecta con la API de Groq (Kimi-K2) siguiendo
-el patrón de arquitectura hexagonal.
+Incluye retry con exponential backoff y circuit breaker.
 """
 
 from __future__ import annotations
@@ -12,7 +11,9 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from src.adapters.agents.circuit_breaker import CircuitBreaker
 from src.adapters.agents.prompt_manager import prompt_manager
+from src.adapters.agents.retry import retry_with_backoff
 from src.adapters.config.settings import settings
 from src.domain.ports.llm_port import LLMPort
 
@@ -21,17 +22,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_groq_breaker = CircuitBreaker(name="groq", failure_threshold=3, recovery_seconds=60)
+
 
 class GroqAdapter(LLMPort):
-    """
-    Adaptador de Groq que implementa el puerto LLMPort.
-
-    Características:
-    - Usa API de Groq (Kimi-K2 por defecto, configurable via settings)
-    - Sistema de caché de prompts integrado
-    - Limitación de historial automática
-    - Métricas de tokens
-    """
+    """Adaptador de Groq con retry, circuit breaker y caché de prompts."""
 
     def __init__(self, client: httpx.AsyncClient, model: str | None = None) -> None:
         self.client = client
@@ -43,6 +38,7 @@ class GroqAdapter(LLMPort):
                 "Groq API key vacía. Las llamadas fallarán con 401. "
                 "Configurá GROQ_API_KEY en .env"
             )
+        self._breaker = _groq_breaker
 
     async def get_chat_completion(
         self,
@@ -55,28 +51,17 @@ class GroqAdapter(LLMPort):
         agent_mode: str | None = None,
         use_cache: bool = True,
     ) -> tuple[str, int | None]:
-        """
-        Obtiene una respuesta del modelo Kimi-K2 via Groq.
+        if self._breaker.is_open:
+            raise RuntimeError(
+                f"Groq circuit breaker open ({self._breaker.state}). "
+                f"Provider temporalmente deshabilitado."
+            )
 
-        Args:
-            system_prompt: Prompt del sistema
-            messages: Historial de mensajes
-            max_tokens: Tokens máximos de respuesta
-            temperature: Temperatura del modelo (0.0-1.0)
-            session_id: ID de sesión para caché
-            agent_mode: Modo del agente para caché
-            use_cache: Si usar sistema de caché
-
-        Returns:
-            Tupla (respuesta, tokens_consumidos)
-        """
         tokens_consumed = None
 
-        # Sistema de caché de prompts
         if use_cache and session_id and agent_mode:
             from src.adapters.agents.prompts import AgentMode
 
-            # Convertir string a AgentMode si es necesario
             try:
                 mode_enum = (
                     AgentMode(agent_mode) if isinstance(agent_mode, str) else agent_mode
@@ -85,15 +70,10 @@ class GroqAdapter(LLMPort):
                 mode_enum = None
 
             if mode_enum:
-                # Obtener prompt optimizado
                 optimized_prompt, is_cached = prompt_manager.get_prompt(
                     session_id=session_id, agent_mode=mode_enum
                 )
-
-                # Limitar historial
                 limited_messages = prompt_manager.limit_history(messages)
-
-                # Registrar métricas
                 user_msg = messages[-1].content if messages else ""
                 metrics = prompt_manager.record_metrics(
                     session_id=session_id,
@@ -102,19 +82,39 @@ class GroqAdapter(LLMPort):
                     user_message=user_msg,
                     is_cached=is_cached,
                 )
-
-                # Usar prompt y mensajes optimizados
                 system_prompt = optimized_prompt
                 messages = limited_messages
                 tokens_consumed = metrics.total_tokens if metrics else None
 
-        # Construir mensajes para API
+        try:
+            result = await retry_with_backoff(
+                self._call_api,
+                system_prompt=system_prompt,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                max_retries=3,
+                base_delay=1.0,
+            )
+            self._breaker.record_success()
+            content, _ = result
+            return content, tokens_consumed
+        except Exception:
+            self._breaker.record_failure()
+            raise
+
+    async def _call_api(
+        self,
+        system_prompt: str,
+        messages: list[ChatMessage],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> tuple[str, int | None]:
         api_messages = [
             {"role": "system", "content": system_prompt},
             *[{"role": msg.role.value, "content": msg.content} for msg in messages],
         ]
 
-        # Llamar a API de Groq
         response = await self.client.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
@@ -133,12 +133,9 @@ class GroqAdapter(LLMPort):
         )
 
         if response.status_code in (401, 403):
-            logger.error(
-                f"Groq AUTH error ({response.status_code}): API key inválida. "
-                f"Respuesta: {response.text[:300]}"
-            )
+            logger.error(f"Groq AUTH error ({response.status_code}): API key inválida.")
             raise ConnectionRefusedError(
-                f"Groq API auth failed ({response.status_code}): verificá GROQ_API_KEY"
+                f"Groq API auth failed ({response.status_code})"
             )
 
         response.raise_for_status()
@@ -146,7 +143,7 @@ class GroqAdapter(LLMPort):
         data = response.json()
         content = data["choices"][0]["message"]["content"]
 
-        return content, tokens_consumed
+        return content, None
 
     async def get_chat_completion_stream(
         self,
@@ -156,24 +153,14 @@ class GroqAdapter(LLMPort):
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> str:
-        """
-        Obtiene respuesta en modo streaming (no implementado aún).
-
-        Por ahora retorna la respuesta completa.
-        """
         response, _ = await self.get_chat_completion(
             system_prompt=system_prompt,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            use_cache=False,  # No usar caché en streaming
+            use_cache=False,
         )
         return response
 
     def estimate_tokens(self, text: str) -> int:
-        """
-        Estima tokens usando aproximación simple.
-
-        Regla: ~4 caracteres = 1 token
-        """
         return len(text) // 4

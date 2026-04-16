@@ -1,8 +1,7 @@
 """
 Adaptador de Gemini que implementa LLMPort.
 
-Este adaptador conecta con la API de Google Gemini siguiendo
-el patrón de arquitectura hexagonal.
+Incluye retry con exponential backoff y circuit breaker.
 """
 
 from __future__ import annotations
@@ -11,47 +10,35 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from src.adapters.agents.circuit_breaker import CircuitBreaker
+from src.adapters.agents.retry import retry_with_backoff
 from src.adapters.config.settings import settings
 from src.domain.ports.llm_port import LLMPort
 
 if TYPE_CHECKING:
     from src.domain.models import ChatMessage
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+_gemini_breaker = CircuitBreaker(
+    name="gemini", failure_threshold=3, recovery_seconds=60
+)
+
 
 class GeminiAdapter(LLMPort):
-    """
-    Adaptador de Gemini que implementa el puerto LLMPort.
-
-    Características:
-    - Usa API de Google Gemini
-    - Compatible con generateContent endpoint
-    - Fallback para cuando Groq falla
-    """
+    """Adaptador de Gemini con retry y circuit breaker."""
 
     def __init__(self, client: httpx.AsyncClient) -> None:
-        """
-        Inicializa el adaptador de Gemini.
-
-        Args:
-            client: Cliente HTTP asíncrono
-        """
         self.client = client
         self.api_key = settings.gemini_api_key
         self.model = settings.gemini_model_name
+        self._breaker = _gemini_breaker
 
     def _build_contents(
         self, system_prompt: str, messages: list[ChatMessage]
     ) -> dict[str, Any]:
-        """
-        Construye el payload para la API de Gemini.
-
-        Args:
-            system_prompt: Prompt del sistema
-            messages: Historial de mensajes
-
-        Returns:
-            Payload en formato Gemini
-        """
         parts: list[dict[str, str]] = []
 
         if system_prompt:
@@ -80,24 +67,38 @@ class GeminiAdapter(LLMPort):
         agent_mode: str | None = None,
         use_cache: bool = True,
     ) -> tuple[str, int | None]:
-        """
-        Obtiene una respuesta del modelo Gemini.
-
-        Args:
-            system_prompt: Prompt del sistema
-            messages: Historial de mensajes
-            max_tokens: Tokens máximos de respuesta
-            temperature: Temperatura del modelo
-            session_id: No usado en Gemini
-            agent_mode: No usado en Gemini
-            use_cache: No usado en Gemini
-
-        Returns:
-            Tupla (respuesta, None) - Gemini no retorna tokens
-        """
         if not self.api_key:
             raise RuntimeError("Gemini API key no configurada")
 
+        if self._breaker.is_open:
+            raise RuntimeError(
+                f"Gemini circuit breaker open ({self._breaker.state}). "
+                f"Provider temporalmente deshabilitado."
+            )
+
+        try:
+            result = await retry_with_backoff(
+                self._call_api,
+                system_prompt=system_prompt,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                max_retries=3,
+                base_delay=1.0,
+            )
+            self._breaker.record_success()
+            return result
+        except Exception:
+            self._breaker.record_failure()
+            raise
+
+    async def _call_api(
+        self,
+        system_prompt: str,
+        messages: list[ChatMessage],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> tuple[str, int | None]:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:generateContent"
@@ -126,7 +127,6 @@ class GeminiAdapter(LLMPort):
 
         data = response.json()
 
-        # Extraer texto de respuesta
         candidates = data.get("candidates", [])
         if not candidates:
             raise RuntimeError("Gemini no retornó candidatos")
@@ -139,7 +139,7 @@ class GeminiAdapter(LLMPort):
 
         text = parts[0].get("text", "")
 
-        return text, None  # Gemini no retorna conteo de tokens
+        return text, None
 
     async def get_chat_completion_stream(
         self,
@@ -149,11 +149,6 @@ class GeminiAdapter(LLMPort):
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> str:
-        """
-        Obtiene respuesta en modo streaming (no implementado).
-
-        Por ahora retorna la respuesta completa.
-        """
         response, _ = await self.get_chat_completion(
             system_prompt=system_prompt,
             messages=messages,
@@ -163,9 +158,4 @@ class GeminiAdapter(LLMPort):
         return response
 
     def estimate_tokens(self, text: str) -> int:
-        """
-        Estima tokens usando aproximación simple.
-
-        Regla: ~4 caracteres = 1 token
-        """
         return len(text) // 4

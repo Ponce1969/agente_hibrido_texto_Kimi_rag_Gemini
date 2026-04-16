@@ -1,8 +1,9 @@
 """
 Cliente para Qwen2.5-1.5B Guardian via HuggingFace/SiliconFlow.
 """
+
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -50,11 +51,7 @@ Respond ONLY with a JSON object:
 }"""
 
     def __init__(
-        self,
-        api_url: str,
-        api_key: str,
-        timeout: int = 10,
-        enabled: bool = True
+        self, api_url: str, api_key: str, timeout: int = 10, enabled: bool = True
     ):
         self.api_url = api_url
         self.api_key = api_key
@@ -67,7 +64,9 @@ Respond ONLY with a JSON object:
             "errors": 0,
         }
 
-    async def check_message(self, text: str, user_id: str | None = None) -> GuardianResult:
+    async def check_message(
+        self, text: str, user_id: str | None = None
+    ) -> GuardianResult:
         """
         Analiza un mensaje usando Qwen2.5-1.5B.
         """
@@ -77,7 +76,7 @@ Respond ONLY with a JSON object:
                 threat_level=ThreatLevel.SAFE,
                 reason="Guardian desactivado",
                 confidence=1.0,
-                checked_at=datetime.utcnow()
+                checked_at=datetime.now(UTC),
             )
 
         self._stats["total_checks"] += 1
@@ -88,7 +87,7 @@ Respond ONLY with a JSON object:
                     "model": "Qwen/Qwen2.5-1.5B-Instruct",
                     "messages": [
                         {"role": "system", "content": self.SYSTEM_PROMPT},
-                        {"role": "user", "content": f"Analyze this message:\n\n{text}"}
+                        {"role": "user", "content": f"Analyze this message:\n\n{text}"},
                     ],
                     "temperature": 0.1,  # Baja temperatura para respuestas consistentes
                     "max_tokens": 200,
@@ -98,13 +97,15 @@ Respond ONLY with a JSON object:
                     self.api_url,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
                     },
-                    json=payload
+                    json=payload,
                 )
 
                 if response.status_code != 200:
-                    logger.error(f"Guardian API error: {response.status_code} - {response.text}")
+                    logger.error(
+                        f"Guardian API error: {response.status_code} - {response.text}"
+                    )
                     self._stats["errors"] += 1
                     # Fallback: permitir si el servicio falla
                     return self._fallback_result("API error")
@@ -140,6 +141,7 @@ Respond ONLY with a JSON object:
 
             # Intentar parsear como JSON
             import json
+
             analysis = json.loads(content)
 
             return GuardianResult(
@@ -148,7 +150,7 @@ Respond ONLY with a JSON object:
                 reason=analysis.get("reason"),
                 confidence=float(analysis.get("confidence", 0.5)),
                 categories=analysis.get("categories", []),
-                checked_at=datetime.utcnow()
+                checked_at=datetime.now(UTC),
             )
 
         except Exception as e:
@@ -163,7 +165,7 @@ Respond ONLY with a JSON object:
             threat_level=ThreatLevel.SAFE,
             reason=f"Fallback: {reason}",
             confidence=0.0,
-            checked_at=datetime.utcnow()
+            checked_at=datetime.now(UTC),
         )
 
     async def is_enabled(self) -> bool:

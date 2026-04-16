@@ -1,8 +1,9 @@
 """
 Adaptador de DeepSeek que implementa LLMPort.
 
-DeepSeek usa una API compatible con OpenAI, lo que permite
-reutilizar el patrón de request con mínimos cambios.
+DeepSeek usa una API compatible con OpenAI. Incluye:
+- Retry con exponential backoff para errores transitorios
+- Circuit breaker para deshabilitar provider tras fallos consecutivos
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from src.adapters.agents.circuit_breaker import CircuitBreaker
+from src.adapters.agents.retry import retry_with_backoff
 from src.adapters.config.settings import settings
 from src.domain.ports.llm_port import LLMPort
 
@@ -20,13 +23,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Circuit breaker compartido para DeepSeek
+_deepseek_breaker = CircuitBreaker(
+    name="deepseek", failure_threshold=3, recovery_seconds=60
+)
+
 
 class DeepSeekAdapter(LLMPort):
     """
     Adaptador de DeepSeek que implementa el puerto LLMPort.
 
-    DeepSeek ofrece una API OpenAI-compatible, haciendo la integración
-    directa y simple. Costo: ~$0.28/M input, ~$0.88/M output (DeepSeek-V3).
+    Incluye retry automático y circuit breaker.
     """
 
     def __init__(
@@ -46,6 +53,7 @@ class DeepSeekAdapter(LLMPort):
                 "Configurá DEEPSEEK_API_KEY en .env"
             )
         self.base_url = (base_url or settings.deepseek_base_url).rstrip("/")
+        self._breaker = _deepseek_breaker
 
     async def get_chat_completion(
         self,
@@ -58,7 +66,37 @@ class DeepSeekAdapter(LLMPort):
         agent_mode: str | None = None,
         use_cache: bool = True,
     ) -> tuple[str, int | None]:
-        """Obtiene una respuesta de DeepSeek via API OpenAI-compatible."""
+        """Obtiene una respuesta de DeepSeek con retry y circuit breaker."""
+        if self._breaker.is_open:
+            raise RuntimeError(
+                f"DeepSeek circuit breaker open ({self._breaker.state}). "
+                f"Provider temporalmente deshabilitado."
+            )
+
+        try:
+            result = await retry_with_backoff(
+                self._call_api,
+                system_prompt=system_prompt,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                max_retries=3,
+                base_delay=1.0,
+            )
+            self._breaker.record_success()
+            return result
+        except Exception:
+            self._breaker.record_failure()
+            raise
+
+    async def _call_api(
+        self,
+        system_prompt: str,
+        messages: list[ChatMessage],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> tuple[str, int | None]:
+        """Llamada directa a la API de DeepSeek (sin retry)."""
         api_messages = [
             {"role": "system", "content": system_prompt},
             *[{"role": msg.role.value, "content": msg.content} for msg in messages],
@@ -78,40 +116,29 @@ class DeepSeekAdapter(LLMPort):
             "Content-Type": "application/json",
         }
 
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
+        response = await self.client.post(
+            f"{self.base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
+        )
+
+        if response.status_code in (401, 403):
+            logger.error(
+                f"DeepSeek AUTH error ({response.status_code}): API key inválida."
             )
-            response.raise_for_status()
+            raise ConnectionRefusedError(
+                f"DeepSeek API auth failed ({response.status_code})"
+            )
 
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            usage = data.get("usage", {})
-            tokens = usage.get("total_tokens")
+        response.raise_for_status()
 
-            return content, tokens
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        tokens = usage.get("total_tokens")
 
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            if status in (401, 403):
-                logger.error(
-                    f"DeepSeek AUTH error ({status}): API key inválida o sin permisos. "
-                    f"Respuesta: {e.response.text[:300]}"
-                )
-                raise ConnectionRefusedError(
-                    f"DeepSeek API auth failed ({status}): verificá DEEPSEEK_API_KEY"
-                ) from e
-            logger.error(f"DeepSeek API error: {status} - {e.response.text[:500]}")
-            raise
-        except httpx.TimeoutException:
-            logger.error("DeepSeek API timeout")
-            raise
-        except Exception as e:
-            logger.error(f"DeepSeek unexpected error: {e}")
-            raise
+        return content, tokens
 
     async def get_chat_completion_stream(
         self,
