@@ -741,8 +741,8 @@ class ChatServiceV2:
         # - Chat normal → Kimi-K2 (llm)
 
         if has_rag and self.fallback_llm:
-            # RAG: Usar Gemini (mejor para contextos largos)
-            logger.info("🤖 Usando Gemini 2.5 para RAG")
+            # RAG: Usar provider de fallback (configurable, default: Gemini)
+            logger.info("🤖 Usando LLM de fallback para RAG")
 
             try:
                 response, tokens = await self.fallback_llm.get_chat_completion(
@@ -757,8 +757,8 @@ class ChatServiceV2:
                 logger.error(f"❌ Error en Gemini: {e}")
                 raise
         else:
-            # Chat normal: Usar Kimi-K2 (más rápido)
-            logger.info("🤖 Usando Kimi-K2 para chat normal")
+            # Chat normal: Usar provider principal (configurable, default: Groq/Kimi)
+            logger.info("🤖 Usando LLM principal para chat")
 
             try:
                 response, tokens = await self.llm.get_chat_completion(

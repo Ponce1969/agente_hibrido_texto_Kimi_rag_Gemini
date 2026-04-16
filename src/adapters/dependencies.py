@@ -15,6 +15,12 @@ from sqlmodel import Session
 
 from src.adapters.agents.gemini_adapter import GeminiAdapter
 from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapter
+from src.adapters.config.llm_router import (
+    get_chat_llm,
+    get_fallback_llm,
+    get_rag_llm,
+    log_routing_config,
+)
 from src.adapters.config.settings import settings
 from src.adapters.db.chat_repository_adapter import SQLChatRepositoryAdapter
 from src.adapters.db.database import get_session
@@ -57,25 +63,37 @@ def get_async_http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient()
 
 
+# --- Logging de routing ---
+log_routing_config()
+
+
 # --- Adaptadores ---
 def get_chat_repository(session: Session = Depends(get_session)) -> ChatRepositoryPort:
     return SQLChatRepositoryAdapter(session)
 
 
 def get_file_repository() -> FileRepositoryPort:
-    # SQLFileRepository NO recibe Session en el constructor
     return SQLFileRepository()
 
 
+def get_chat_llm_dep() -> LLMPort:
+    """Factory para el LLM de chat (configurable via settings)."""
+    return get_chat_llm(get_async_http_client())
+
+
+def get_rag_llm_dep() -> LLMPort:
+    """Factory para el LLM de RAG/PDFs (configurable via settings)."""
+    return get_rag_llm(get_async_http_client())
+
+
+def get_fallback_llm_dep() -> LLMPort | None:
+    """Factory para el LLM de fallback (configurable via settings). None si está deshabilitado."""
+    return get_fallback_llm(get_async_http_client())
+
+
 def get_gemini_adapter() -> LLMPort:
+    """Legacy factory para Gemini adapter (usado por embeddings y otros)."""
     return GeminiAdapter(client=get_async_http_client())
-
-
-def get_groq_adapter() -> LLMPort:
-    """Factory para el adaptador de Groq (Kimi-K2 a través de la API de Groq)."""
-    from src.adapters.agents.groq_adapter import GroqAdapter
-
-    return GroqAdapter(client=get_async_http_client())
 
 
 def get_gemini_embeddings_adapter() -> EmbeddingsPort:
@@ -112,8 +130,8 @@ def get_file_processing_service(
 
 
 def get_chat_service(
-    llm_client: LLMPort = Depends(get_groq_adapter),
-    fallback_llm: LLMPort = Depends(get_gemini_adapter),
+    llm_client: LLMPort = Depends(get_chat_llm_dep),
+    fallback_llm: LLMPort | None = Depends(get_fallback_llm_dep),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
@@ -134,8 +152,8 @@ def get_chat_service(
 
 
 def get_chat_service_hibrido_mejorado(
-    llm_client: LLMPort = Depends(get_groq_adapter),
-    fallback_llm: LLMPort = Depends(get_gemini_adapter),
+    llm_client: LLMPort = Depends(get_chat_llm_dep),
+    fallback_llm: LLMPort | None = Depends(get_fallback_llm_dep),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
@@ -167,8 +185,8 @@ def get_chat_service_hibrido_mejorado(
 
 
 def get_chat_service_dependency(
-    llm_client: LLMPort = Depends(get_groq_adapter),
-    fallback_llm: LLMPort = Depends(get_gemini_adapter),
+    llm_client: LLMPort = Depends(get_chat_llm_dep),
+    fallback_llm: LLMPort | None = Depends(get_fallback_llm_dep),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),
@@ -189,8 +207,8 @@ def get_chat_service_dependency(
 
 
 def get_chat_service_hibrido_dependency(
-    llm_client: LLMPort = Depends(get_groq_adapter),
-    fallback_llm: LLMPort = Depends(get_gemini_adapter),
+    llm_client: LLMPort = Depends(get_chat_llm_dep),
+    fallback_llm: LLMPort | None = Depends(get_fallback_llm_dep),
     repository: ChatRepositoryPort = Depends(get_chat_repository),
     embeddings_service: EmbeddingsServiceV2 = Depends(get_embeddings_service),
     python_search: PythonSearchPort = Depends(get_python_search_tool),

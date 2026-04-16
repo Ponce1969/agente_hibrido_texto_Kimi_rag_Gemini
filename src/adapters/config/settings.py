@@ -27,47 +27,83 @@ class Settings(BaseSettings):
 
     # --- Entorno ---
     environment: str = Field(
-        "production",
-        description="Entorno de ejecución: development o production"
+        "production", description="Entorno de ejecución: development o production"
     )
 
     # --- API Keys y Secretos ---
     groq_api_key: str = Field(..., description="API key para Groq.")
-    gemini_api_key: str | None = Field(None, description="API key para Gemini (Google AI Studio)")
-    bear_api_key: str = Field(..., description="API key para Bear API (búsqueda Python)")
+    gemini_api_key: str | None = Field(
+        None, description="API key para Gemini (Google AI Studio)"
+    )
+    deepseek_api_key: str | None = Field(
+        None, description="API key para DeepSeek (OpenAI-compatible)"
+    )
+    bear_api_key: str = Field(
+        ..., description="API key para Bear API (búsqueda Python)"
+    )
 
     # --- Seguridad y Autenticación ---
     jwt_secret_key: str = Field(
         ...,
-        description="Clave secreta para firmar tokens JWT. DEBE ser única y segura en producción."
+        description="Clave secreta para firmar tokens JWT. DEBE ser única y segura en producción.",
     )
     jwt_expire_minutes: int = Field(
         60,
-        description="Tiempo de expiración de tokens JWT en minutos (default: 60 = 1 hora)"
+        description="Tiempo de expiración de tokens JWT en minutos (default: 60 = 1 hora)",
     )
     rag_api_key: str = Field(
         ...,
-        description="API Key para proteger el endpoint interno del LLM Gateway (acceso desde CLI)."
+        description="API Key para proteger el endpoint interno del LLM Gateway (acceso desde CLI).",
     )
 
-    # --- Modelo LLM ---
+    # --- Modelo LLM: Provider Routing ---
+    chat_provider: str = Field(
+        "groq", description="Provider para chat normal: groq | deepseek | gemini"
+    )
+    chat_model: str = Field(
+        "moonshotai/kimi-k2-instruct-0905",
+        description="Modelo para chat normal (usado por el provider seleccionado)",
+    )
+    rag_provider: str = Field(
+        "gemini", description="Provider para RAG/PDFs: gemini | deepseek | groq"
+    )
+    rag_model: str = Field(
+        "gemini-2.5-flash",
+        description="Modelo para RAG/PDFs (usado por el provider seleccionado)",
+    )
+    fallback_provider: str = Field(
+        "gemini",
+        description="Provider de fallback cuando el principal falla: gemini | deepseek | groq | none",
+    )
+    fallback_model: str = Field(
+        "gemini-2.5-flash",
+        description="Modelo de fallback (usado por el provider seleccionado)",
+    )
+    # Compatibilidad: estos aliases mapean a los nuevos campos
     groq_model_name: str = Field(
         "moonshotai/kimi-k2-instruct-0905",
-        description="Nombre del modelo de Groq a utilizar.",
+        description="Alias para chat_model cuando chat_provider=groq.",
     )
     gemini_model_name: str = Field(
         "gemini-2.5-flash",
-        description="Nombre del modelo de Gemini a utilizar para fallback o PDFs.",
+        description="Alias para rag_model cuando rag_provider=gemini.",
     )
     llm_provider_preference: str = Field(
         "gemini_for_pdf_kimi_for_chat",
-        description="Estrategia de proveedor: kimi_first_gemini_fallback | gemini_for_pdf_kimi_for_chat",
+        description="Estrategia legacy de routing (se ignora si se usan los nuevos campos).",
     )
     temperature: float = Field(
         0.3, description="Temperatura para la generación del modelo (creatividad)."
     )
     max_tokens: int = Field(
-        8192, description="Máximo de tokens a generar en la respuesta (Gemini soporta hasta 8192)"
+        8192,
+        description="Máximo de tokens a generar en la respuesta (Gemini soporta hasta 8192)",
+    )
+
+    # --- DeepSeek Config ---
+    deepseek_base_url: str = Field(
+        "https://api.deepseek.com/v1",
+        description="URL base de la API de DeepSeek (OpenAI-compatible)",
     )
 
     # --- Base de Datos ---
@@ -83,8 +119,7 @@ class Settings(BaseSettings):
 
     # Backend de base de datos a usar
     db_backend: str = Field(
-        "sqlite",
-        description="Backend de base de datos: sqlite o postgresql"
+        "sqlite", description="Backend de base de datos: sqlite o postgresql"
     )
 
     @property
