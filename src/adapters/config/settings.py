@@ -5,11 +5,22 @@ Utiliza pydantic-settings para cargar y validar la configuración desde
 variables de entorno y/o un archivo .env.
 """
 
+import logging
+
 from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+def _mask_key(key: str) -> str:
+    """Enmascara una API key mostrando solo los primeros 4 y últimos 4 caracteres."""
+    if not key or len(key) < 12:
+        return "***EMPTY_OR_TOO_SHORT***" if not key else f"***{len(key)}chars***"
+    return f"{key[:4]}...{key[-4:]}"
 
 
 class Settings(BaseSettings):
@@ -96,8 +107,8 @@ class Settings(BaseSettings):
         0.3, description="Temperatura para la generación del modelo (creatividad)."
     )
     max_tokens: int = Field(
-        8192,
-        description="Máximo de tokens a generar en la respuesta (Gemini soporta hasta 8192)",
+        4096,
+        description="Máximo de tokens a generar en la respuesta (ajustado para respuestas concisas)",
     )
 
     # --- DeepSeek Config ---
@@ -181,31 +192,30 @@ class Settings(BaseSettings):
         description="Máximo de resultados de búsqueda a incluir en el contexto (aumentado para mejor cobertura)",
     )
 
-    # --- Búsqueda RAG Adaptativa (aprovecha ventana de contexto de Gemini) ---
-    # Optimizado para libros técnicos grandes (SQL, Python, etc.)
+    # --- Búsqueda RAG Adaptativa ---
     rag_simple_top_k: int = Field(
-        7,
+        5,
         description="Número de chunks para preguntas simples (¿Qué es X?)",
     )
     rag_normal_top_k: int = Field(
-        12,
-        description="Número de chunks para preguntas normales - aumentado para libros técnicos densos",
+        8,
+        description="Número de chunks para preguntas normales",
     )
     rag_complex_top_k: int = Field(
-        20,
-        description="Número de chunks para preguntas complejas - aumentado para análisis profundos de libros grandes",
+        12,
+        description="Número de chunks para preguntas complejas",
     )
     rag_simple_limit: int = Field(
-        8000,
+        4000,
         description="Límite de caracteres de contexto para preguntas simples",
     )
     rag_normal_limit: int = Field(
-        15000,
-        description="Límite de caracteres de contexto para preguntas normales - aumentado para libros densos",
+        8000,
+        description="Límite de caracteres de contexto para preguntas normales",
     )
     rag_complex_limit: int = Field(
-        30000,
-        description="Límite de caracteres de contexto para preguntas complejas - aprovecha ventana de Gemini al máximo",
+        15000,
+        description="Límite de caracteres de contexto para preguntas complejas",
     )
 
     # --- Guardian (Qwen2.5-1.5B Security) ---
@@ -237,6 +247,65 @@ class Settings(BaseSettings):
         20,
         description="Longitud mínima de mensaje para activar Guardian (caracteres)",
     )
+
+    def validate_api_keys(self) -> list[str]:
+        """Valida las API keys al arrancar. Retorna lista de problemas encontrados."""
+        issues: list[str] = []
+
+        key_configs = [
+            ("groq", self.groq_api_key, "gsk_", self.chat_provider == "groq"),
+            (
+                "deepseek",
+                self.deepseek_api_key,
+                "sk-",
+                self.chat_provider == "deepseek",
+            ),
+            ("gemini", self.gemini_api_key, "AI", self.rag_provider == "gemini"),
+            ("guardian", self.guardian_api_key, "", True),
+        ]
+
+        for name, key, expected_prefix, is_active in key_configs:
+            if not key:
+                if is_active:
+                    issues.append(
+                        f"❌ {name}_api_key: VACÍA pero {name} está activo como provider"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️ {name}_api_key: no configurada (provider inactivo)"
+                    )
+            else:
+                cleaned = key.strip()
+                if cleaned != key:
+                    issues.append(
+                        f"❌ {name}_api_key: tiene espacios en blanco al inicio/final "
+                        f"(len={len(key)}, stripped={len(cleaned)})"
+                    )
+                if expected_prefix and not cleaned.startswith(expected_prefix):
+                    issues.append(
+                        f"⚠️ {name}_api_key: no empieza con '{expected_prefix}' "
+                        f"(empieza con '{cleaned[:6]}...')"
+                    )
+                if "\n" in key or "\r" in key:
+                    issues.append(f"❌ {name}_api_key: contiene saltos de línea")
+                logger.info(f"🔑 {name}_api_key: {_mask_key(cleaned)}")
+
+        return issues
+
+    def log_startup_config(self) -> None:
+        """Loguea la configuración de startup con validación de keys."""
+        issues = self.validate_api_keys()
+        logger.info(
+            f"🚀 LLM Routing: "
+            f"chat={self.chat_provider}/{self.chat_model}, "
+            f"rag={self.rag_provider}/{self.rag_model}, "
+            f"fallback={self.fallback_provider}/{self.fallback_model}"
+        )
+        if issues:
+            for issue in issues:
+                logger.error(f"🔑 API KEY ISSUE: {issue}")
+        else:
+            logger.info("✅ Todas las API keys validadas correctamente")
 
 
 # Instancia única para ser importada en otros módulos

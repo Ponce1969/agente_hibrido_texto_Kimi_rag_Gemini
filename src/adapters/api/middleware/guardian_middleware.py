@@ -4,6 +4,7 @@ Intercepta requests al chat y valida mensajes.
 
 BYPASS: Requests con RAG_API_KEY válida bypasean el Guardian (CLI autenticado).
 """
+
 import logging
 import secrets
 from collections.abc import Callable
@@ -35,18 +36,14 @@ class GuardianMiddleware(BaseHTTPMiddleware):
         app,
         guardian_service: GuardianService,
         enabled: bool = True,
-        rag_api_key: str | None = None
+        rag_api_key: str | None = None,
     ):
         super().__init__(app)
         self.guardian_service = guardian_service
         self.enabled = enabled
         self.rag_api_key = rag_api_key
 
-    async def dispatch(
-        self,
-        request: Request,
-        call_next: Callable
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
         Intercepta requests y valida mensajes si es necesario.
 
@@ -69,7 +66,9 @@ class GuardianMiddleware(BaseHTTPMiddleware):
             api_key = request.headers.get("X-API-Key")
             if api_key and secrets.compare_digest(api_key, self.rag_api_key):
                 client_host = request.client.host if request.client else "unknown"
-                logger.info(f"🔓 Bypass: Request desde {client_host} validado con RAG_API_KEY")
+                logger.info(
+                    f"🔓 Bypass: Request desde {client_host} validado con RAG_API_KEY"
+                )
                 return await call_next(request)
 
         try:
@@ -78,6 +77,7 @@ class GuardianMiddleware(BaseHTTPMiddleware):
 
             # Parsear JSON
             import json
+
             data = json.loads(body.decode())
 
             # Extraer el mensaje del usuario
@@ -91,8 +91,7 @@ class GuardianMiddleware(BaseHTTPMiddleware):
             # Validar con Guardian
             logger.info(f"🛡️ Guardian validating message from user {user_id}")
             result = await self.guardian_service.check_message(
-                text=message,
-                user_id=user_id
+                text=message, user_id=user_id
             )
 
             # Si el mensaje no es seguro, bloquear
@@ -110,7 +109,7 @@ class GuardianMiddleware(BaseHTTPMiddleware):
                         "reason": result.reason,
                         "threat_level": result.threat_level.value,
                         "categories": result.categories or [],
-                    }
+                    },
                 )
 
             # Mensaje seguro, continuar
@@ -139,10 +138,28 @@ class GuardianMiddleware(BaseHTTPMiddleware):
                     "error": "message_blocked",
                     "message": str(e),
                     "threat_level": e.threat_level,
-                }
+                },
             )
 
         except Exception as e:
-            # Si hay un error, permitir el mensaje (fail-open)
+            # Si hay un error de autenticación (401/403), bloqueear por seguridad (fail-closed)
+            error_str = str(e).lower()
+            if (
+                "auth" in error_str
+                or "401" in error_str
+                or "403" in error_str
+                or "invalid" in error_str
+            ):
+                logger.error(
+                    f"🚨 Guardian AUTH FAILURE - bloqueando por seguridad (fail-closed): {e}"
+                )
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={
+                        "error": "guardian_unavailable",
+                        "message": "Servicio de seguridad no disponible. Intentá de nuevo en unos segundos.",
+                    },
+                )
+            # Otros errores: permitir (fail-open) para no bloquear el servicio
             logger.error(f"Guardian error: {e}", exc_info=True)
             return await call_next(request)

@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Iniciando aplicación y creando tablas de la base de datos...")
+    logger.info("Iniciando aplicación...")
+    settings.log_startup_config()
     create_db_and_tables()
 
     try:

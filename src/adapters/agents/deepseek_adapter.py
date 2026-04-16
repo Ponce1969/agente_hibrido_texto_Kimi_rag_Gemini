@@ -38,7 +38,13 @@ class DeepSeekAdapter(LLMPort):
     ) -> None:
         self.client = client
         self.model = model
-        self.api_key = api_key or settings.deepseek_api_key or ""
+        raw_key = api_key or settings.deepseek_api_key or ""
+        self.api_key = raw_key.strip()
+        if not self.api_key:
+            logger.warning(
+                "DeepSeek API key vacía. Las llamadas fallarán con 401. "
+                "Configurá DEEPSEEK_API_KEY en .env"
+            )
         self.base_url = (base_url or settings.deepseek_base_url).rstrip("/")
 
     async def get_chat_completion(
@@ -89,9 +95,16 @@ class DeepSeekAdapter(LLMPort):
             return content, tokens
 
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"DeepSeek API error: {e.response.status_code} - {e.response.text[:500]}"
-            )
+            status = e.response.status_code
+            if status in (401, 403):
+                logger.error(
+                    f"DeepSeek AUTH error ({status}): API key inválida o sin permisos. "
+                    f"Respuesta: {e.response.text[:300]}"
+                )
+                raise ConnectionRefusedError(
+                    f"DeepSeek API auth failed ({status}): verificá DEEPSEEK_API_KEY"
+                ) from e
+            logger.error(f"DeepSeek API error: {status} - {e.response.text[:500]}")
             raise
         except httpx.TimeoutException:
             logger.error("DeepSeek API timeout")

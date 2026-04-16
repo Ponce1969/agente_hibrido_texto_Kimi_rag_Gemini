@@ -448,21 +448,18 @@ class ChatServiceV2:
 
         # Si hay contexto RAG, PRIORIZAR el contexto del PDF
         if rag_context:
-            # Prompt MEJORADO para respuestas técnicas en español
             system_prompt = (
-                f"Eres un asistente experto en análisis técnico de documentos. El usuario ha cargado un documento PDF.\n\n"
-                "**INSTRUCCIONES OBLIGATORIAS:**\n"
-                "1. SIEMPRE responde en español\n"
-                "2. NO menciones 'Chunk', 'fragmento', 'sección' ni números de referencia interna\n"
-                "3. Responde de forma técnica y concisa\n"
-                "4. Estructura con bullets y secciones claras\n"
-                "5. Si el usuario pide 'puntos importantes', lista solo los conceptos clave\n"
-                "6. Permite que el usuario pida más detalles sobre puntos específicos\n"
-                "7. NUNCA inventes información que no esté en el documento\n\n"
-                f"--- CONTENIDO DEL DOCUMENTO ---\n\n"
+                f"Eres un asistente experto en análisis técnico de documentos.\n\n"
+                "REGLAS OBLIGATORIAS:\n"
+                "1. Responde en español, DIRECTO al punto. Máximo 3-4 párrafos.\n"
+                "2. NO menciones 'Chunk', 'fragmento' ni números de referencia interna.\n"
+                "3. 1 ejemplo de código máximo. Si hacen falta más, pregunta.\n"
+                "4. Si el usuario quiere más detalle, lo pide explícitamente.\n"
+                "5. NUNCA inventes información que no esté en el documento.\n\n"
+                f"--- DOCUMENTO ---\n\n"
                 f"{rag_context}\n\n"
-                "--- FIN DEL DOCUMENTO ---\n\n"
-                "Responde basándote únicamente en este contenido."
+                "--- FIN ---\n\n"
+                "Responde basándote únicamente en este contenido. Sé BREVE."
             )
             logger.debug(f"🎯 System prompt RAG: {len(system_prompt)} caracteres")
 
@@ -606,21 +603,12 @@ class ChatServiceV2:
 
         # Instrucción común sobre limitaciones de conocimiento (específica para Kimi-K2)
         knowledge_cutoff = (
-            "\n\n**REGLAS DE CONOCIMIENTO Y BÚSQUEDA WEB (Kimi-K2):**\n"
-            "Tu conocimiento base cubre hasta Python 3.13 (inclusive) y enero 2025.\n\n"
-            "**PARA PREGUNTAS TÉCNICAS DE PYTHON:**\n"
-            "- Responde normalmente con tu conocimiento experto de Python\n"
-            "- Mantén la calidad técnica y precisión en arquitectura, código y mejores prácticas\n"
-            "- Usa tu experiencia como arquitecto/software engineer senior\n\n"
-            "**CUANDO NECESITES BÚSQUEDA WEB:**\n"
-            "Si la pregunta requiere información más actual o menciona explícitamente:\n"
-            "- Python 3.14, 3.15, 'dev', 'main branch', 'nightly'\n"
-            "- Librerías sin soporte estable o releases muy recientes\n"
-            "- Eventos/noticias/releases posteriores a enero 2025\n"
-            "- Preguntas sobre clima, noticias, información en tiempo real\n\n"
-            'ENTONCES responde: "Voy a buscar información actualizada sobre esto."\n\n'
-            "**IMPORTANTE:** Prioriza siempre respuestas técnicas de alta calidad. "
-            "Usa búsqueda web solo cuando sea estrictamente necesario para información actualizada."
+            "\n\n**CONOCIMIENTO:** Cubres hasta Python 3.13 y enero 2025.\n"
+            "Para preguntas técnicas de Python, responde con conocimiento experto.\n"
+            "Si necesitas info más actual (Python 3.14+, releases recientes, noticias), responde: "
+            "'Voy a buscar información actualizada sobre esto.'\n"
+            "**REGLA DE BREVEDAD:** Responde DIRECTO. Máximo 3-4 párrafos. "
+            "1 ejemplo de código. Si el usuario quiere más, lo pide."
         )
 
         try:
@@ -738,7 +726,7 @@ class ChatServiceV2:
         """Helper para obtener respuesta del LLM con lógica de fallback."""
         # IMPORTANTE: Sistema híbrido
         # - RAG (con file_id) → Gemini 2.5 (fallback_llm)
-        # - Chat normal → Kimi-K2 (llm)
+        # - Chat normal → Provider principal (configurable: groq/deepseek/gemini)
 
         if has_rag and self.fallback_llm:
             # RAG: Usar provider de fallback (configurable, default: Gemini)
@@ -753,8 +741,11 @@ class ChatServiceV2:
                     temperature=temperature or 0.3,
                 )
                 return response, tokens
+            except ConnectionRefusedError as e:
+                logger.error(f"❌ Auth error en LLM de RAG: {e}")
+                raise
             except Exception as e:
-                logger.error(f"❌ Error en Gemini: {e}")
+                logger.error(f"❌ Error en LLM de RAG: {e}")
                 raise
         else:
             # Chat normal: Usar provider principal (configurable, default: Groq/Kimi)
@@ -771,11 +762,26 @@ class ChatServiceV2:
                     use_cache=True,  # Caché solo para chat normal
                 )
                 return response, tokens
-            except Exception as e:
-                # Fallback a Gemini si Kimi falla
+            except ConnectionRefusedError as e:
+                # Auth error — el provider rechazó la key
                 if use_fallback_on_error and self.fallback_llm:
                     logger.warning(
-                        f"⚠️ Kimi-K2 falló, usando Gemini como fallback. Error: {e}"
+                        f"⚠️ LLM principal AUTH FAILED, usando fallback. Error: {e}"
+                    )
+                    response, tokens = await self.fallback_llm.get_chat_completion(
+                        system_prompt=system_prompt,
+                        messages=history,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    return response, tokens
+                else:
+                    raise
+            except Exception as e:
+                # Otro error (timeout, rate limit, etc.)
+                if use_fallback_on_error and self.fallback_llm:
+                    logger.warning(
+                        f"⚠️ LLM principal falló, usando fallback. Error: {e}"
                     )
                     response, tokens = await self.fallback_llm.get_chat_completion(
                         system_prompt=system_prompt,

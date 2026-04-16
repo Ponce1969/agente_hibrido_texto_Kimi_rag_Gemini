@@ -7,6 +7,7 @@ el patrón de arquitectura hexagonal.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import httpx
@@ -17,6 +18,8 @@ from src.domain.ports.llm_port import LLMPort
 
 if TYPE_CHECKING:
     from src.domain.models import ChatMessage
+
+logger = logging.getLogger(__name__)
 
 
 class GroqAdapter(LLMPort):
@@ -33,6 +36,13 @@ class GroqAdapter(LLMPort):
     def __init__(self, client: httpx.AsyncClient, model: str | None = None) -> None:
         self.client = client
         self.model = model or settings.groq_model_name
+        raw_key = settings.groq_api_key
+        self.api_key = raw_key.strip() if raw_key else ""
+        if not self.api_key:
+            logger.warning(
+                "Groq API key vacía. Las llamadas fallarán con 401. "
+                "Configurá GROQ_API_KEY en .env"
+            )
 
     async def get_chat_completion(
         self,
@@ -108,7 +118,7 @@ class GroqAdapter(LLMPort):
         response = await self.client.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {settings.groq_api_key}",
+                "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
             json={
@@ -121,6 +131,16 @@ class GroqAdapter(LLMPort):
             },
             timeout=httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=10.0),
         )
+
+        if response.status_code in (401, 403):
+            logger.error(
+                f"Groq AUTH error ({response.status_code}): API key inválida. "
+                f"Respuesta: {response.text[:300]}"
+            )
+            raise ConnectionRefusedError(
+                f"Groq API auth failed ({response.status_code}): verificá GROQ_API_KEY"
+            )
+
         response.raise_for_status()
 
         data = response.json()
