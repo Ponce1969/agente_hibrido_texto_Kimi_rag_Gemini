@@ -1,3 +1,4 @@
+import logging
 import os
 from collections.abc import Generator
 
@@ -5,18 +6,12 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from src.adapters.config.settings import settings
-from src.adapters.db.file_models import FileSection, FileUpload  # noqa: F401
-from src.domain.models.user import User  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 
 def sanitize_db_url(url: str) -> str:
-    """
-    Oculta credenciales y detalles en URLs de base de datos para logs seguros.
-
-    Ejemplo:
-        postgresql://user:password@host:5432/db
-        -> PostgreSQL (base de datos configurada)
-    """
+    """Oculta credenciales en URLs de base de datos para logs seguros."""
     if "postgresql" in url.lower():
         return "PostgreSQL (pgvector)"
     elif "sqlite" in url.lower():
@@ -25,94 +20,75 @@ def sanitize_db_url(url: str) -> str:
         return "Base de datos configurada"
 
 
-# Importar modelos de embeddings solo si usamos PostgreSQL para RAG
-# (Los embeddings van en PostgreSQL, no en SQLite)
+# Importar modelos para que SQLModel.metadata los conozca
+from src.adapters.db.file_models import FileSection, FileUpload  # noqa: F401
+from src.domain.models.user import User  # noqa: F401
+
 try:
     from src.adapters.db.embeddings_models import (  # noqa: F401
         EmbeddingChunk,
         SimilarChunk,
     )
 except ImportError:
-    # Los modelos de embeddings pueden no estar disponibles
     pass
 
-# Importar modelos de chat si existen
 try:
-    from src.adapters.db.chat_models import ChatMessage, ChatSession  # noqa: F401
+    from src.adapters.db.chat import ChatSession  # noqa: F401
+    from src.adapters.db.message import ChatMessage  # noqa: F401
 except ImportError:
-    # Si no existen modelos de chat específicos para DB, usar los de dominio
     pass
 
-# Configuración de base de datos (SQLite o PostgreSQL)
+# Configuración de base de datos
 if settings.db_backend == "postgresql" and settings.database_url_pg:
-    # Configuración para PostgreSQL
     engine = create_engine(
         settings.effective_database_url,
-        echo=False,  # Cambiar a True para debugging
+        echo=False,
     )
 else:
-    # Configuración para SQLite con threading
     engine = create_engine(
         settings.effective_database_url,
-        connect_args={
-            "check_same_thread": False,
-        },
+        connect_args={"check_same_thread": False},
         poolclass=StaticPool,
-        echo=False,  # Cambiar a True para debugging
+        echo=False,
     )
+
+
+def run_alembic_migrations() -> None:
+    """Ejecuta las migraciones de Alembic pendientes.
+
+    Se usa en vez de create_all() para manejar schema evolution de forma segura.
+    En desarrollo sin DB, crea las tablas con create_all() como fallback.
+    """
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        alembic_cfg = Config()
+        alembic_cfg.set_main_option("script_location", "alembic")
+        alembic_cfg.set_main_option("sqlalchemy.url", settings.effective_database_url)
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Migraciones de Alembic ejecutadas correctamente")
+    except Exception as e:
+        logger.warning(f"No se pudieron ejecutar migraciones Alembic: {e}")
+        logger.info("Fallback: creando tablas con SQLModel.metadata.create_all()")
+        _create_tables_fallback()
+
+
+def _create_tables_fallback() -> None:
+    """Crea tablas usando create_all() como fallback cuando Alembic no está disponible."""
+    os.makedirs("data", exist_ok=True)
+    os.makedirs("data/files", exist_ok=True)
+    SQLModel.metadata.create_all(engine)
+    safe_url = sanitize_db_url(settings.effective_database_url)
+    logger.info(f"Tablas creadas/verificadas en: {safe_url}")
 
 
 def create_db_and_tables():
-    """Crea las tablas de la base de datos si no existen"""
-    # Asegurar directorios de datos
-    os.makedirs("data", exist_ok=True)
-    os.makedirs("data/files", exist_ok=True)
-
-    # Crear todas las tablas usando SQLModel
-    SQLModel.metadata.create_all(engine)
-
-    # Log seguro sin exponer credenciales
-    safe_url = sanitize_db_url(settings.effective_database_url)
-    print(f"✅ Tablas creadas/verificadas en: {safe_url}")
-
-    # Ajustes específicos según el backend
-    if settings.db_backend == "postgresql":
-        # Ajustes para PostgreSQL
-        try:
-            with engine.begin() as conn:
-                # Verificar que la extensión pgvector esté disponible
-                conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector;")
-                print("✅ Extensión pgvector verificada")
-        except Exception as e:
-            print(f"⚠️ No se pudo verificar pgvector: {e}")
-    else:
-        # Ajustes para SQLite (desarrollo)
-        try:
-            with engine.begin() as conn:
-                # Añadir columna extra_data a chat_sessions si no existe
-                conn.exec_driver_sql(
-                    """
-                    ALTER TABLE chat_sessions ADD COLUMN extra_data TEXT
-                    """
-                )
-        except Exception:
-            # Es probable que la columna ya exista; ignorar en dev
-            pass
-
-        try:
-            with engine.begin() as conn:
-                # Añadir columna extra_data a chat_messages si no existe
-                conn.exec_driver_sql(
-                    """
-                    ALTER TABLE chat_messages ADD COLUMN extra_data TEXT
-                    """
-                )
-        except Exception:
-            # Es probable que la columna ya exista; ignorar en dev
-            pass
+    """Inicializa la base de datos. Usa Alembic si está disponible, fallback a create_all."""
+    run_alembic_migrations()
 
 
 def get_session() -> Generator[Session, None, None]:
-    """Dependency para obtener sesión de base de datos"""
+    """Dependency para obtener sesión de base de datos."""
     with Session(engine) as session:
         yield session

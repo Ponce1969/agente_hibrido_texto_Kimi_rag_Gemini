@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlmodel import Field, SQLModel
 
@@ -17,7 +17,9 @@ class FileUpload(SQLModel, table=True):
     __table_args__ = {"extend_existing": True}
 
     id: int | None = Field(default=None, primary_key=True)
-    uuid_str: str = Field(index=True, description="UUID4 como nombre lógico del archivo en disco")
+    uuid_str: str = Field(
+        index=True, description="UUID4 como nombre lógico del archivo en disco"
+    )
     filename_original: str
     filename_saved: str
     path: str
@@ -26,8 +28,8 @@ class FileUpload(SQLModel, table=True):
     pages_processed: int = 0
     status: str = Field(default=FileStatus.PENDING, index=True)
     error_message: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Relación inversa no tipada para evitar problemas con SQLAlchemy 2.0.
     # Consultas se realizan por file_id en FileSection.
