@@ -54,7 +54,7 @@ class NewSessionResponse(BaseModel):
 @router.post("/sessions", response_model=NewSessionResponse, status_code=201)
 def create_new_session(
     request: NewSessionRequest,
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Crea una nueva sesión de chat."""
@@ -105,7 +105,7 @@ class ChatMessageDTO(BaseModel):
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageDTO])
 def get_session_messages_api(
     session_id: int,
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Devuelve los mensajes persistidos para una sesión de chat."""
@@ -143,7 +143,7 @@ class SessionSummaryDTO(BaseModel):
 def list_sessions(
     user_id: str = Query(..., description="Usuario dueño de las sesiones"),
     limit: int = Query(30, ge=1, le=200),
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_current_user_optional),
     service: ChatServiceV2 = Depends(get_chat_service_dependency),
 ):
     """Lista las sesiones de un usuario con detalles."""

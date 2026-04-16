@@ -161,7 +161,7 @@ class EmbeddingsRepository:
         if min_similarity > 0.0:
             max_distance = 1.0 - min_similarity
             filter_parts.append(
-                "(embedding <=> :embedding_vec::vector) <= :max_distance"
+                "(embedding <=> CAST(:embedding_vec AS vector)) <= :max_distance"
             )
             params["max_distance"] = max_distance
 
@@ -170,11 +170,11 @@ class EmbeddingsRepository:
         sql = text(
             f"""
             SELECT id, file_id, section_id, chunk_index, content,
-                   (embedding <=> :embedding_vec::vector) AS distance,
+                   (embedding <=> CAST(:embedding_vec AS vector)) AS distance,
                    page_number, section_type, file_name
             FROM {TABLE_NAME}
             {where_clause}
-            ORDER BY embedding <=> :embedding_vec::vector
+            ORDER BY embedding <=> CAST(:embedding_vec AS vector)
             LIMIT :k
             """
         )
