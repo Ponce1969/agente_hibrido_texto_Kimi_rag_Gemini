@@ -223,6 +223,10 @@ class Settings(BaseSettings):
         True,
         description="Habilitar/deshabilitar Guardian de seguridad",
     )
+    guardian_llm_enabled: bool = Field(
+        False,
+        description="Usar LLM externo (SiliconFlow) para Guardian. False = solo heurísticas (rápido, sin dependencia externa)",
+    )
     guardian_api_url: str = Field(
         "https://api.siliconflow.cn/v1/chat/completions",
         description="URL de la API de HuggingFace/SiliconFlow para Qwen Guardian",
@@ -261,7 +265,7 @@ class Settings(BaseSettings):
                 self.chat_provider == "deepseek",
             ),
             ("gemini", self.gemini_api_key, "AI", self.rag_provider == "gemini"),
-            ("guardian", self.guardian_api_key, "", True),
+            ("guardian", self.guardian_api_key, "", self.guardian_llm_enabled),
         ]
 
         for name, key, expected_prefix, is_active in key_configs:
@@ -296,16 +300,20 @@ class Settings(BaseSettings):
         """Loguea la configuración de startup con validación de keys."""
         issues = self.validate_api_keys()
         logger.info(
-            f"🚀 LLM Routing: "
+            f"LLM Routing: "
             f"chat={self.chat_provider}/{self.chat_model}, "
             f"rag={self.rag_provider}/{self.rag_model}, "
             f"fallback={self.fallback_provider}/{self.fallback_model}"
         )
+        guardian_mode = (
+            "LLM+heuristics" if self.guardian_llm_enabled else "heuristics-only"
+        )
+        logger.info(f"Guardian: enabled={self.guardian_enabled}, mode={guardian_mode}")
         if issues:
             for issue in issues:
-                logger.error(f"🔑 API KEY ISSUE: {issue}")
+                logger.error(f"API KEY ISSUE: {issue}")
         else:
-            logger.info("✅ Todas las API keys validadas correctamente")
+            logger.info("All API keys validated successfully")
 
 
 # Instancia única para ser importada en otros módulos

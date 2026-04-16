@@ -142,24 +142,6 @@ class GuardianMiddleware(BaseHTTPMiddleware):
             )
 
         except Exception as e:
-            # Si hay un error de autenticación (401/403), bloqueear por seguridad (fail-closed)
-            error_str = str(e).lower()
-            if (
-                "auth" in error_str
-                or "401" in error_str
-                or "403" in error_str
-                or "invalid" in error_str
-            ):
-                logger.error(
-                    f"🚨 Guardian AUTH FAILURE - bloqueando por seguridad (fail-closed): {e}"
-                )
-                return JSONResponse(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    content={
-                        "error": "guardian_unavailable",
-                        "message": "Servicio de seguridad no disponible. Intentá de nuevo en unos segundos.",
-                    },
-                )
-            # Otros errores: permitir (fail-open) para no bloquear el servicio
+            # Error inesperado: permitir (fail-open para no bloquear el servicio)
             logger.error(f"Guardian error: {e}", exc_info=True)
             return await call_next(request)

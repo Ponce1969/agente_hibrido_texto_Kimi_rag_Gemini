@@ -7,11 +7,14 @@ inyectadas, siguiendo el patrón de Dependency Injection.
 
 from __future__ import annotations
 
+import logging
 from functools import cache
 
 import httpx
 from fastapi import Depends
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 from src.adapters.agents.gemini_adapter import GeminiAdapter
 from src.adapters.agents.gemini_embeddings_adapter import GeminiEmbeddingsAdapter
@@ -303,11 +306,17 @@ def get_guardian_client() -> GuardianPort:
 def _create_guardian_service_instance() -> GuardianService:
     """Crea una instancia del servicio Guardian (sin Depends, para middleware)."""
     guardian_client = get_guardian_client()
+    llm_enabled = settings.guardian_llm_enabled
+    logger.info(
+        f"Guardian initialized: enabled={settings.guardian_enabled}, "
+        f"llm_enabled={llm_enabled}"
+    )
     return GuardianService(
         guardian_client=guardian_client,
         max_calls_per_minute=settings.guardian_max_calls_per_minute,
         cache_ttl=settings.guardian_cache_ttl,
         min_length_to_check=settings.guardian_min_length,
+        llm_enabled=llm_enabled,
     )
 
 
@@ -326,4 +335,5 @@ def get_guardian_service(
         max_calls_per_minute=settings.guardian_max_calls_per_minute,
         cache_ttl=settings.guardian_cache_ttl,
         min_length_to_check=settings.guardian_min_length,
+        llm_enabled=settings.guardian_llm_enabled,
     )
