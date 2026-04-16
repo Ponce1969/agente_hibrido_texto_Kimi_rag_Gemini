@@ -32,10 +32,11 @@ docker compose up -d --build
 
 ## 🎯 **Características Principales**
 
-- 🤖 **3 Agentes IA:** Kimi-K2, Gemini 2.5 Flash, Guardian Qwen2.5-1.5B
+- 🤖 **Routing LLM configurable:** DeepSeek, Groq (Kimi-K2), Gemini — cambiar desde .env sin código
 - 📚 **RAG con pgvector:** Consulta PDFs con búsqueda semántica
 - 🌐 **Brave Search:** Búsquedas Python especializadas
 - 🛡️ **Guardian de Seguridad:** Protección contra prompt injection y jailbreak
+- 🔐 **JWT Auth:** Endpoints protegidos con autenticación
 - 🏗️ **Arquitectura Hexagonal:** Código limpio y mantenible
 - 📊 **Métricas Completas:** Tokens, costos, performance
 
@@ -79,20 +80,50 @@ src/
 
 ---
 
-## 🤖 **Agentes**
+## 🤖 **Agentes y Routing LLM**
 
-| Agente | Modelo | Uso |
-|--------|--------|-----|
-| **Kimi-K2** | `moonshotai/kimi-k2-instruct-0905` | Chat general + Brave Search |
-| **Gemini 2.5 Flash** | `gemini-2.5-flash` | RAG con PDFs |
-| **Guardian** | `Qwen/Qwen2.5-1.5B-Instruct` | Seguridad |
+El sistema usa **routing configurable** — cambiás de proveedor desde el `.env` sin tocar código.
 
-**+ 5 Agentes de Rol:**
-- Arquitecto Python Senior
-- Ingeniero de Código
-- Auditor de Seguridad
-- Especialista en Bases de Datos
-- Ingeniero de Refactoring
+### **Proveedores disponibles**
+
+| Proveedor | Variable | Modelos | Costo approx. |
+|-----------|----------|---------|---------------|
+| **Groq** (Kimi-K2) | `CHAT_PROVIDER=groq` | `moonshotai/kimi-k2-instruct-0905` | Gratis (rate limited) |
+| **DeepSeek** | `CHAT_PROVIDER=deepseek` | `deepseek-chat`, `deepseek-reasoner` | $0.28/M input |
+| **Gemini** | `CHAT_PROVIDER=gemini` | `gemini-2.5-flash` | Gratis (rate limited) |
+
+### **Configuración de routing (.env)**
+
+```env
+# --- Routing LLM: cambiar proveedor sin código ---
+CHAT_PROVIDER=deepseek          # Chat general: groq | deepseek | gemini
+CHAT_MODEL=deepseek-chat       # Modelo para chat
+RAG_PROVIDER=gemini             # RAG/PDFs: gemini | deepseek | groq
+RAG_MODEL=gemini-2.5-flash     # Modelo para RAG
+FALLBACK_PROVIDER=gemini       # Fallback si el principal falla: gemini | deepseek | groq | none
+FALLBACK_MODEL=gemini-2.5-flash # Modelo de fallback
+
+# --- API Keys (solo los providers que uses) ---
+GROQ_API_KEY=gsk_xxx           # Obligatorio si CHAT_PROVIDER=groq
+DEEPSEEK_API_KEY=sk-xxx        # Obligatorio si CHAT_PROVIDER=deepseek
+GEMINI_API_KEY=AIzaxxx         # Obligatorio si RAG_PROVIDER=gemini o FALLBACK_PROVIDER=gemini
+```
+
+### **Ejemplos de routing**
+
+| Configuración | Resultado |
+|--------------|----------|
+| `CHAT_PROVIDER=groq` + `RAG_PROVIDER=gemini` | Chat con Kimi-K2, PDFs con Gemini (config por defecto) |
+| `CHAT_PROVIDER=deepseek` + `RAG_PROVIDER=gemini` | Chat con DeepSeek, PDFs con Gemini |
+| `CHAT_PROVIDER=deepseek` + `FALLBACK_PROVIDER=deepseek` | DeepSeek para todo, DeepSeek como fallback |
+| `FALLBACK_PROVIDER=none` | Sin fallback, error si el proveedor principal falla |
+
+### **Costo estimado: DeepSeek como cache HIT**
+
+Con `CHAT_PROVIDER=deepseek` + `FALLBACK_PROVIDER=gemini`:
+- Respuestas cacheadas: ~$0.028/M tokens (prácticamente gratis)
+- Respuestas nuevas: ~$0.28/M input, ~$0.88/M output
+- Si DeepSeek falla: Gemini toma el relevo automáticamente
 
 ---
 
@@ -100,19 +131,20 @@ src/
 
 - **Backend:** FastAPI, SQLModel, PostgreSQL, pgvector
 - **Frontend:** Streamlit, Plotly
-- **IA:** Groq API (Kimi), Google Gemini API, HuggingFace/SiliconFlow
+- **IA:** Groq API (Kimi), Google Gemini API, DeepSeek API, HuggingFace/SiliconFlow
 - **Infraestructura:** Docker, Gunicorn, Uvicorn
 
 ---
 
 ## 📊 **Estado del Proyecto**
 
-✅ **Arquitectura Hexagonal** - Código limpio y mantenible  
-✅ **RAG con pgvector** - Búsqueda semántica en PDFs  
-✅ **Brave Search** - Búsquedas Python especializadas  
-✅ **Guardian de Seguridad** - Protección contra ataques  
+✅ **Arquitectura Hexagonal** - Código limpio y mantenible
+✅ **RAG con pgvector** - Búsqueda semántica en PDFs
+✅ **Routing LLM Configurable** - DeepSeek, Groq, Gemini desde .env
+✅ **JWT Auth** - Endpoints protegidos con autenticación
+✅ **Brave Search** - Búsquedas Python especializadas
+✅ **Guardian de Seguridad** - Protección contra ataques
 ✅ **Métricas Completas** - Tokens, costos, performance  
-✅ **Documentación Profesional** - README completo  
 
 **Estado:** 🚀 **PRODUCTION READY**
 
