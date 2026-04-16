@@ -55,6 +55,8 @@ COPY --from=builder /app/.venv ./.venv
 # Copiar SOLO el código fuente necesario (sin .env, se pasa por docker-compose)
 COPY src/ ./src/
 COPY scripts/ ./scripts/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 COPY gunicorn.conf.py ./
 COPY .streamlit/ ./.streamlit/
 
