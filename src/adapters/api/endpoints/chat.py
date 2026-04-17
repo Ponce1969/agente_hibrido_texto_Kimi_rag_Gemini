@@ -18,13 +18,9 @@ from src.application.services.chat_service import ChatServiceV2
 
 logger = logging.getLogger(__name__)
 
-# Configurar limiter para este router
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
-
-
-# --- Schemas de la API (Pydantic) ---
 
 
 class ChatRequest(BaseModel):
@@ -40,15 +36,19 @@ class ChatResponse(BaseModel):
     reply: str
 
 
+class ChatErrorResponse(BaseModel):
+    error: str
+    detail: str
+    provider: str | None = None
+    retryable: bool = True
+
+
 class NewSessionRequest(BaseModel):
     user_id: str
 
 
 class NewSessionResponse(BaseModel):
     session_id: int
-
-
-# --- Endpoints ---
 
 
 @router.post("/sessions", response_model=NewSessionResponse, status_code=201)
@@ -69,7 +69,7 @@ def create_new_session(
 
 
 @router.post("/chat", response_model=ChatResponse)
-@limiter.limit("10/minute")  # Límite: 10 requests por minuto (consume tokens LLM)
+@limiter.limit("10/minute")
 async def handle_chat(
     request: Request,
     chat_request: ChatRequest,
@@ -86,14 +86,81 @@ async def handle_chat(
             user_message=chat_request.message,
             agent_mode=chat_request.mode.value,
             file_id=chat_request.file_id,
-            use_internet=True,  # Habilitar búsqueda web con Brave
+            use_internet=True,
         )
         return ChatResponse(reply=reply)
+
+    except ConnectionRefusedError as e:
+        error_str = str(e)
+        provider = (
+            "deepseek"
+            if "DeepSeek" in error_str
+            else "groq"
+            if "Groq" in error_str
+            else "gemini"
+        )
+        logger.error(f"Auth error from {provider}: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=ChatErrorResponse(
+                error="provider_auth_error",
+                detail=f"Provider {provider} authentication failed. Check API key.",
+                provider=provider,
+                retryable=False,
+            ).model_dump(),
+        ) from None
+
+    except RuntimeError as e:
+        error_str = str(e)
+        if "circuit breaker" in error_str.lower():
+            provider = (
+                "deepseek"
+                if "deepseek" in error_str.lower()
+                else "groq"
+                if "groq" in error_str.lower()
+                else "gemini"
+            )
+            logger.warning(f"Circuit breaker open for {provider}: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail=ChatErrorResponse(
+                    error="provider_unavailable",
+                    detail=f"Provider {provider} is temporarily unavailable (circuit breaker open). Try again later.",
+                    provider=provider,
+                    retryable=True,
+                ).model_dump(),
+            ) from None
+        logger.error(f"Runtime error en handle_chat: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=ChatErrorResponse(
+                error="runtime_error",
+                detail="Internal error processing message.",
+                retryable=True,
+            ).model_dump(),
+        ) from None
+
+    except ValueError as e:
+        logger.warning(f"Validation error en handle_chat: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=ChatErrorResponse(
+                error="validation_error",
+                detail=str(e),
+                retryable=False,
+            ).model_dump(),
+        ) from None
+
     except Exception as e:
         logger.error(f"Error en handle_chat: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="Error interno al procesar el mensaje"
-        )  # noqa: B904
+            status_code=500,
+            detail=ChatErrorResponse(
+                error="internal_error",
+                detail="Error interno al procesar el mensaje.",
+                retryable=True,
+            ).model_dump(),
+        ) from None
 
 
 class ChatMessageDTO(BaseModel):
