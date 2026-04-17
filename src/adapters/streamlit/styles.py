@@ -1,139 +1,80 @@
 """
 Estilos CSS encapsulados para la UI de Streamlit.
 
-Inyecta CSS con selectores específicos para evitar cascada global.
-Todos los selectores usan clases específicas de Streamlit o data attributes
-para minimizar colisiones con otros componentes.
+Principios:
+- NO tocar position/float/z-index de elementos que Streamlit ya posiciona
+- NO forzar anchos en sidebar (rompe el drawer en movil)
+- Solo estilizar lo que Streamlit no controla: colores, padding fino, bordes
+- Multiplataforma: PC y celular deben verse bien
 """
 
 CHAT_STYLES = """
-/* ===== LAYOUT FIJO: Chat messages scroll + Input fijo abajo ===== */
+/* ===== CHAT: mensajes compactos y legibles ===== */
 
-/* Contenedor principal del chat: ocupa todo el viewport disponible */
-[data-testid="stMainBlockContainer"] {
-    padding-bottom: 0 !important;
-}
-
-/* Hacer que el area de mensajes sea scrollable con altura fija
-   El input queda fijado abajo del viewport gracias a st.chat_input */
-.stChatFloatingInputContainer {
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    z-index: 999 !important;
-    background: var(--streamlit-background-color, #ffffff) !important;
-    border-top: 1px solid var(--streamlit-secondary-background-color, #f0f2f6) !important;
-    padding: 0.75rem 1rem !important;
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.08) !important;
+/* Mensajes mas compactos: menos espacio vertical entre ellos */
+.stChatMessage {
+    padding: 0.25rem 0.5rem !important;
 }
 
-/* Dar padding-bottom al contenedor de mensajes para que no quede
-   oculto detras del input fijo */
-.stChatMessageContainer {
-    padding-bottom: 80px !important;
+/* Scrollbar fino para el historial de chat */
+.element-container:has(.stChatMessage) {
+    scrollbar-width: thin;
+    scrollbar-color: #c1c7cf transparent;
 }
 
-/* ===== SCROLLBAR MINIMALISTA ===== */
-.stChatMessageContainer::-webkit-scrollbar {
-    width: 6px;
-}
-.stChatMessageContainer::-webkit-scrollbar-track {
-    background: transparent;
-}
-.stChatMessageContainer::-webkit-scrollbar-thumb {
-    background: #c1c7cf;
-    border-radius: 3px;
-}
-.stChatMessageContainer::-webkit-scrollbar-thumb:hover {
-    background: #a0a6af;
-}
-
-/* ===== CHAT BUBBLES ===== */
-
-/* Mensajes del asistente */
-.stChatMessage[data-testid="assistantMessage"] {
-    background: var(--streamlit-secondary-background-color, #f0f2f6) !important;
-    border-radius: 12px !important;
-    padding: 12px 16px !important;
-    margin: 4px 0 !important;
-    max-width: 85% !important;
-    margin-left: 0 !important;
-}
-
-/* Mensajes del usuario */
-.stChatMessage[data-testid="userMessage"] {
-    background: #e8f0fe !important;
-    border-radius: 12px !important;
-    padding: 12px 16px !important;
-    margin: 4px 0 !important;
-    max-width: 85% !important;
-    margin-left: auto !important;
-    margin-right: 0 !important;
-}
-
-/* Avatar del asistente */
-.stChatMessage[data-testid="assistantMessage"] .stChatMessageAvatar {
-    font-size: 1.2rem !important;
-}
-
-/* ===== SIDEBAR COMPACTA ===== */
-[data-testid="stSidebar"] {
-    max-width: 280px !important;
-    min-width: 240px !important;
-}
-
-/* Reducir padding en sidebar para maximizar espacio */
+/* ===== SIDEBAR: solo padding sutil, SIN tocar width ===== */
 [data-testid="stSidebar"] .stSidebarContent {
-    padding: 1rem 0.75rem !important;
+    padding: 0.75rem !important;
 }
 
-/* ===== INDICADORES DE MODO ===== */
-
-/* Success container (RAG activado) - mas compacto */
+/* ===== INDICADORES DE MODO: mas compactos ===== */
 .stSuccess {
-    padding: 0.5rem 1rem !important;
+    padding: 0.4rem 0.75rem !important;
     border-radius: 8px !important;
-    font-size: 0.9rem !important;
+    font-size: 0.85rem !important;
 }
 
-/* Info container (Chat normal) - mas compacto */
 .stInfo {
-    padding: 0.5rem 1rem !important;
+    padding: 0.4rem 0.75rem !important;
     border-radius: 8px !important;
-    font-size: 0.9rem !important;
+    font-size: 0.85rem !important;
 }
 
-/* ===== SEPARADORES MINIMALISTAS ===== */
+/* ===== SEPARADORES ===== */
 hr {
-    margin: 0.5rem 0 !important;
-    border-color: #e0e0e0 !important;
+    margin: 0.4rem 0 !important;
 }
 
-/* ===== RESPONSIVE: Cuando la pantalla es estrecha ===== */
+/* ===== MOVIL: ajustes solo para pantallas chicas ===== */
 @media (max-width: 768px) {
-    [data-testid="stSidebar"] {
-        max-width: 100% !important;
-        min-width: 100% !important;
+    /* Sidebar: dejar que Streamlit haga el drawer nativo */
+    /* NO forzar width ni max-width - Streamlit maneja el drawer */
+
+    /* Mensajes mas compactos en movil */
+    .stChatMessage {
+        padding: 0.15rem 0.25rem !important;
     }
 
-    .stChatMessage[data-testid="assistantMessage"],
-    .stChatMessage[data-testid="userMessage"] {
-        max-width: 95% !important;
+    /* Indicadores de modo aun mas compactos */
+    .stSuccess, .stInfo {
+        padding: 0.3rem 0.5rem !important;
+        font-size: 0.8rem !important;
+    }
+
+    /* Botones full width en movil */
+    .stButton button {
+        width: 100% !important;
     }
 }
 """
 
 DASHBOARD_STYLES = """
-/* ===== DASHBOARD STYLES ===== */
-
-/* Metric cards con borde sutil */
+/* ===== DASHBOARD ===== */
 [data-testid="stMetricValue"] {
-    font-size: 1.5rem !important;
+    font-size: 1.4rem !important;
     font-weight: 600 !important;
 }
 
-/* Plotly charts responsivos */
 .js-plotly-plot {
     border-radius: 8px !important;
     overflow: hidden !important;
