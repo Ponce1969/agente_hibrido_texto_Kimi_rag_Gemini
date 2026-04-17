@@ -1,7 +1,9 @@
 """
 Componente de interfaz de chat.
-Maneja la visualización y entrada de mensajes de chat.
+Maneja la visualizacion y entrada de mensajes de chat.
+Layout: mensajes con scroll + input fijo abajo.
 """
+
 import io
 import os
 import sys
@@ -17,7 +19,7 @@ from services.session_service import SessionService
 
 
 class ChatInterface:
-    """Componente para la interfaz de chat."""
+    """Componente para la interfaz de chat con input fijo abajo."""
 
     def __init__(self, backend_client: BackendClient, session_service: SessionService):
         self.backend = backend_client
@@ -32,76 +34,83 @@ class ChatInterface:
             "⚙️ Ingeniero de Código": AgentMode.CODE_GENERATOR,
             "🔒 Auditor de Seguridad": AgentMode.SECURITY_ANALYST,
             "🗄️ Especialista en BD": AgentMode.DATABASE_SPECIALIST,
-            "🔄 Ingeniero de Refactoring": AgentMode.REFACTOR_ENGINEER
+            "🔄 Ingeniero de Refactoring": AgentMode.REFACTOR_ENGINEER,
         }
 
         selected = st.selectbox(
             "Elige el rol del agente:",
             options=list(agent_options.keys()),
             index=0,
-            key="agent_mode_selector"
+            key="agent_mode_selector",
         )
 
         return agent_options[selected]
 
     def render_chat_history(self) -> None:
-        """Renderiza el historial de chat."""
+        """Renderiza el historial de chat dentro de un contenedor con scroll."""
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
-        # Mostrar mensajes existentes
+        if not st.session_state.messages:
+            st.markdown(
+                '<div style="text-align: center; padding: 3rem 1rem; color: #888; '
+                'font-size: 0.95rem;">'
+                "Escribí tu consulta abajo para empezar 👋"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            return
+
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    def handle_user_input(self, agent_mode: AgentMode, file_id: int | None = None) -> None:
+    def handle_user_input(
+        self, agent_mode: AgentMode, file_id: int | None = None
+    ) -> None:
         """Maneja la entrada del usuario y genera respuesta."""
-        if prompt := st.chat_input("Escribe tu consulta aquí..."):
-            # Mostrar mensaje del usuario
+        if prompt := st.chat_input("Escribe tu consulta aqui..."):
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            # Agregar a la sesión
             st.session_state.messages.append({"role": "user", "content": prompt})
 
-            # Preparar request
             session_id = self.session_service.get_or_create_current_session()
             request = ChatRequest(
                 session_id=session_id,
                 message=prompt,
                 mode=agent_mode,
-                file_id=file_id
+                file_id=file_id,
             )
 
-            # El mensaje de modo RAG ya se muestra arriba, no necesitamos duplicarlo aquí
-
-            # Generar respuesta
             with st.chat_message("assistant"):
                 with st.spinner("Pensando..."):
                     response = self.backend.send_chat_message(request)
 
                 if response.success:
                     st.markdown(response.content)
-                    # Agregar respuesta a la sesión
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": response.content
-                    })
+                    st.session_state.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": response.content,
+                        }
+                    )
 
-                    # Refrescar desde backend para garantizar persistencia
                     try:
                         self.session_service.load_session_messages(session_id)
                     except Exception:
-                        pass  # Si falla, mantenemos el estado local
+                        pass
                 else:
                     st.error(f"Error: {response.error}")
 
     def _generate_markdown_content(self) -> str:
         """Genera contenido Markdown del chat."""
         if "messages" not in st.session_state or not st.session_state.messages:
-            return "# Chat vacío\n\nNo hay mensajes para exportar."
+            return "# Chat vacio\n\nNo hay mensajes para exportar."
 
-        md_content = f"# Chat Export - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        md_content = (
+            f"# Chat Export - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
 
         for msg in st.session_state.messages:
             role = "🧑‍💻 Usuario" if msg["role"] == "user" else "🤖 Asistente"
@@ -120,38 +129,34 @@ class ChatInterface:
             doc = SimpleDocTemplate(buffer, pagesize=letter)
             styles = getSampleStyleSheet()
 
-            # Crear estilos personalizados
             title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
+                "CustomTitle",
+                parent=styles["Heading1"],
                 fontSize=16,
                 spaceAfter=30,
             )
 
             user_style = ParagraphStyle(
-                'UserStyle',
-                parent=styles['Normal'],
+                "UserStyle",
+                parent=styles["Normal"],
                 fontSize=12,
                 leftIndent=20,
                 spaceAfter=10,
             )
 
             assistant_style = ParagraphStyle(
-                'AssistantStyle',
-                parent=styles['Normal'],
+                "AssistantStyle",
+                parent=styles["Normal"],
                 fontSize=12,
                 leftIndent=40,
                 spaceAfter=10,
             )
 
             story = []
-
-            # Título
             title = f"Chat Export - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             story.append(Paragraph(title, title_style))
             story.append(Spacer(1, 20))
 
-            # Mensajes
             if "messages" in st.session_state and st.session_state.messages:
                 for msg in st.session_state.messages:
                     if msg["role"] == "user":
@@ -163,7 +168,9 @@ class ChatInterface:
 
                     story.append(Spacer(1, 10))
             else:
-                story.append(Paragraph("No hay mensajes para exportar.", styles['Normal']))
+                story.append(
+                    Paragraph("No hay mensajes para exportar.", styles["Normal"])
+                )
 
             doc.build(story)
             buffer.seek(0)
@@ -179,58 +186,57 @@ class ChatInterface:
     def render_download_buttons(self) -> None:
         """Renderiza los botones de descarga."""
         if "messages" not in st.session_state or not st.session_state.messages:
-            st.info("💬 Inicia una conversación para descargar")
+            st.info("💬 Inicia una conversacion para descargar")
             return
 
-        # Generar contenido
         md_content = self._generate_markdown_content()
-        md_bytes = md_content.encode('utf-8')
+        md_bytes = md_content.encode("utf-8")
         pdf_bytes = self._generate_pdf_content()
 
-        # Botón de Markdown
         st.download_button(
             label="📄 Markdown",
             data=md_bytes,
             file_name=f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
             mime="text/markdown",
-            use_container_width=True
+            use_container_width=True,
         )
 
-        # Botón de PDF
         if pdf_bytes is not None:
             st.download_button(
                 label="📑 PDF",
                 data=pdf_bytes,
                 file_name=f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                 mime="application/pdf",
-                use_container_width=True
+                use_container_width=True,
             )
         else:
             st.button(
                 "📑 PDF (no disponible)",
                 disabled=True,
                 use_container_width=True,
-                help="Instala reportlab para generar PDFs"
+                help="Instala reportlab para generar PDFs",
             )
 
-    def render_chat_section(self, agent_mode: AgentMode, file_id: int | None = None) -> None:
-        """Renderiza la sección completa de chat."""
+    def render_chat_section(
+        self, agent_mode: AgentMode, file_id: int | None = None
+    ) -> None:
+        """Renderiza la seccion completa de chat con layout optimizado."""
         st.header("💬 Chat")
 
-        # Indicador visual claro del modo actual (colores diferenciados)
         if file_id:
             st.success(
-                f"🔍 **RAG Activado** - Gemini 2.5 Flash consultará el PDF (ID: {file_id})",
-                icon="✅"
+                f"🔍 **RAG Activado** - Gemini 2.5 Flash consultara el PDF (ID: {file_id})",
+                icon="✅",
             )
         else:
             st.info(
-                "💬 **Chat Normal** - Conversación general con Kimi-K2",
-                icon="💭"
+                "💬 **Chat Normal** - Conversacion general con Kimi-K2",
+                icon="💭",
             )
 
-        # Historial de mensajes
+        # Renderizar mensajes ANTES del input
+        # El input se renderiza ultimo y queda fijo abajo por CSS
         self.render_chat_history()
 
-        # Entrada de usuario
+        # El input queda al final — Streamlit lo pega abajo del viewport
         self.handle_user_input(agent_mode, file_id)

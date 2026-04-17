@@ -2,6 +2,7 @@
 Aplicación Streamlit refactorizada con arquitectura hexagonal.
 Orquesta los componentes y servicios siguiendo principios SOLID.
 """
+
 import os
 import sys
 
@@ -16,14 +17,18 @@ from components.session_manager import SessionManager
 from services.backend_client import BackendClient
 from services.file_service import FileService
 from services.session_service import SessionService
+from styles import inject_chat_styles, inject_dashboard_styles
 
-# Configuración de página
+# Configuracion de pagina - DEBE ser el primer comando de Streamlit
 st.set_page_config(
     page_title="🤖 Asistente IA con RAG",
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
+
+# Inyectar estilos CSS encapsulados
+inject_chat_styles()
 
 
 def initialize_services() -> tuple[BackendClient, SessionService, FileService]:
@@ -38,7 +43,7 @@ def initialize_services() -> tuple[BackendClient, SessionService, FileService]:
 def initialize_components(
     backend_client: BackendClient,
     session_service: SessionService,
-    file_service: FileService
+    file_service: FileService,
 ) -> tuple[ChatInterface, SessionManager, PDFContextManager]:
     """Inicializa los componentes UI."""
     chat_interface = ChatInterface(backend_client, session_service)
@@ -62,6 +67,7 @@ def render_dashboard():
 
     # Inicializar servicio
     from src.adapters.repositories.metrics_repository import SQLModelMetricsRepository
+
     metrics_repository = SQLModelMetricsRepository()
     metrics_service = MetricsService(repository=metrics_repository)
 
@@ -72,7 +78,7 @@ def render_dashboard():
             "Período de análisis",
             options=[1, 7, 14, 30],
             index=1,
-            format_func=lambda x: f"Últimos {x} días"
+            format_func=lambda x: f"Últimos {x} días",
         )
     with col_filter2:
         if st.button("🔄 Actualizar", use_container_width=True):
@@ -96,36 +102,40 @@ def render_dashboard():
     st.markdown("---")
 
     # Gráficos
-    if summary['total_requests'] > 0:
+    if summary["total_requests"] > 0:
         col_left, col_right = st.columns(2)
 
         with col_left:
-            if summary['agent_usage']:
-                agent_df = pd.DataFrame([
-                    {"Agente": k, "Consultas": v}
-                    for k, v in summary['agent_usage'].items()
-                ])
+            if summary["agent_usage"]:
+                agent_df = pd.DataFrame(
+                    [
+                        {"Agente": k, "Consultas": v}
+                        for k, v in summary["agent_usage"].items()
+                    ]
+                )
                 fig_agents = px.pie(
                     agent_df,
                     values="Consultas",
                     names="Agente",
                     title="Uso por Agente",
-                    hole=0.4
+                    hole=0.4,
                 )
                 st.plotly_chart(fig_agents, use_container_width=True)
 
         with col_right:
-            if summary['model_usage']:
-                model_df = pd.DataFrame([
-                    {"Modelo": k, "Consultas": v}
-                    for k, v in summary['model_usage'].items()
-                ])
+            if summary["model_usage"]:
+                model_df = pd.DataFrame(
+                    [
+                        {"Modelo": k, "Consultas": v}
+                        for k, v in summary["model_usage"].items()
+                    ]
+                )
                 fig_models = px.bar(
                     model_df,
                     x="Modelo",
                     y="Consultas",
                     title="Uso por Modelo",
-                    color="Consultas"
+                    color="Consultas",
                 )
                 st.plotly_chart(fig_models, use_container_width=True)
 
@@ -134,12 +144,18 @@ def render_dashboard():
         col_feat1, col_feat2 = st.columns(2)
 
         with col_feat1:
-            st.metric("Consultas con RAG", summary['rag_requests'],
-                     delta=f"{summary['rag_percentage']:.1f}%")
+            st.metric(
+                "Consultas con RAG",
+                summary["rag_requests"],
+                delta=f"{summary['rag_percentage']:.1f}%",
+            )
 
         with col_feat2:
-            st.metric("Consultas con Bear API", summary['bear_requests'],
-                     delta=f"{summary['bear_percentage']:.1f}%")
+            st.metric(
+                "Consultas con Bear API",
+                summary["bear_requests"],
+                delta=f"{summary['bear_percentage']:.1f}%",
+            )
     else:
         st.info("📊 No hay métricas disponibles. Haz algunas consultas primero.")
 
@@ -167,7 +183,9 @@ def main():
     # TÍTULO DINÁMICO según modo
     if is_rag_mode:
         st.title("🔍 RAG Activado - Gemini 2.5 Flash")
-        st.markdown("*Búsqueda inteligente en PDF • Embeddings 768 dims • PostgreSQL + pgvector*")
+        st.markdown(
+            "*Búsqueda inteligente en PDF • Embeddings 768 dims • PostgreSQL + pgvector*"
+        )
     else:
         st.title("💬 Chat Normal - Kimi-K2")
         st.markdown("*Conversación general • Arquitectura hexagonal • Python 3.12+*")
@@ -215,15 +233,20 @@ def main():
         final_file_id = file_id if (use_context and file_id) else None
 
         # Debug: mostrar valores actuales
-        st.sidebar.caption(f"🔍 Debug: use_context={use_context}, file_id={file_id}, final_file_id={final_file_id}")
+        st.sidebar.caption(
+            f"🔍 Debug: use_context={use_context}, file_id={file_id}, final_file_id={final_file_id}"
+        )
 
         chat_interface.render_chat_section(agent_mode, final_file_id)
 
         # Footer
         st.divider()
-        st.caption("🏗️ Arquitectura hexagonal • 🔍 RAG con embeddings • ⚡ Optimizado para bajos recursos")
+        st.caption(
+            "🏗️ Arquitectura hexagonal • 🔍 RAG con embeddings • ⚡ Optimizado para bajos recursos"
+        )
 
     with tab2:
+        inject_dashboard_styles()
         render_dashboard()
 
 
