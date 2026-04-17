@@ -47,38 +47,26 @@ class ChatInterface:
         return agent_options[selected]
 
     def render_chat_history(self) -> None:
-        """Renderiza el historial de chat dentro de un contenedor con scroll.
+        """Renderiza el historial de chat.
 
-        Usa st.container(height=...) para crear un area de mensajes con scroll
-        propio. El chat input queda fuera de este contenedor, siempre abajo.
+        Streamlit maneja el layout: mensajes arriba, input abajo.
+        No forzamos height ni position — dejamos que fluya naturalmente.
         """
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
-        msg_count = len(st.session_state.messages)
-
-        if msg_count == 0:
-            chat_height = 180
-        elif msg_count <= 3:
-            chat_height = 300
-        elif msg_count <= 8:
-            chat_height = 450
+        if not st.session_state.messages:
+            st.markdown(
+                '<div style="text-align: center; padding: 2rem 1rem; color: #888; '
+                'font-size: 0.95rem;">'
+                "Escribi tu consulta abajo para empezar"
+                "</div>",
+                unsafe_allow_html=True,
+            )
         else:
-            chat_height = 550
-
-        with st.container(height=chat_height, border=False):
-            if msg_count == 0:
-                st.markdown(
-                    '<div style="text-align: center; padding: 2rem 1rem; color: #888; '
-                    'font-size: 0.95rem;">'
-                    "Escribi tu consulta abajo para empezar"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                for message in st.session_state.messages:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
     def handle_user_input(
         self, agent_mode: AgentMode, file_id: int | None = None
